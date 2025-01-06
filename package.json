@@ -1,0 +1,41 @@
+{
+  "name": "jsdmn",
+  "version": "0.1.0",
+  "description": "DMN 1.3 interpreter for JavaScript",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "all": "run-s lint test",
+    "lint": "eslint .",
+    "dev": "nodemon --exec npm test",
+    "test": "mocha --reporter=spec --recursive test/spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barmac/jsdmn.git"
+  },
+  "main": "src/engine.js",
+  "keywords": [
+    "dmn",
+    "intepreter"
+  ],
+  "author": {
+    "name": "Maciej Barelkowski",
+    "url": "https://github.com/barmac"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dmn-moddle": "^10.0.0",
+    "feelin": "^3.2.0"
+  },
+  "devDependencies": {
+    "chai": "^5.1.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-bpmn-io": "^2.0.2",
+    "mocha": "^11.0.1",
+    "nodemon": "^3.1.9",
+    "npm-run-all2": "^7.0.2"
+  }
+}
