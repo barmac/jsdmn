@@ -1,5 +1,4 @@
 import { Loader } from './loader.js';
-import { evaluate } from './evaluator.js';
 
 export class Engine {
   constructor(loader = new Loader()) {
@@ -13,7 +12,7 @@ export class Engine {
       throw new Error(`Decision <${name}> not found`);
     }
 
-    return evaluate(decision, context);
+    return decision.evaluate(context);
   }
 
   load(dmn) {

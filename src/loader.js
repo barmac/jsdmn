@@ -6,16 +6,12 @@ export class Loader {
   }
 
   async load(dmn) {
-    const parsed = await parseDmn(dmn);
+    const parseResult = await parseDmn(dmn);
 
-    const drgElements = parsed.rootElement.get('drgElement');
-
-    const decisions = drgElements.filter(e => e.$instanceOf('dmn:Decision'));
-
-    this.decisions.push(...decisions);
+    this.decisions.push(...parseResult.decisions);
   }
 
   getDecision(name) {
-    return this.decisions.find(d => d.get('name') === name);
+    return this.decisions.find(d => d.getName() === name);
   }
 }
