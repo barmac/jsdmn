@@ -14,4 +14,17 @@ describe('interpreter', function() {
     // then
     expect(result).to.eql(4);
   });
+
+
+  it('should evaluate context', async function() {
+
+    // given
+    const dmn = getFixture('context.dmn');
+
+    // when
+    const result = await interpret(dmn, 'Decision', {});
+
+    // then
+    expect(result).to.eql({ expression: 4 });
+  });
 });
