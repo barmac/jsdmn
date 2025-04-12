@@ -14,7 +14,7 @@ import { Decision } from './handlers/Decision.js';
  * @returns {Promise<ParseResult>}
  */
 export async function parseDmn(dmn) {
-  const moddleResult = await dmnModdle().fromXML(dmn);
+  const moddleResult = await dmnModdle().fromXML(dmn, { lax: false });
 
   const definitions = moddleResult.rootElement;
 
