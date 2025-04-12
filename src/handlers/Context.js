@@ -2,7 +2,8 @@ import { Expression } from './Expression.js';
 
 export class Context {
   constructor(moddleElement) {
-    this.contextEntries = moddleElement.get('contextEntry').map(entry => {
+    const entries = moddleElement.get('contextEntry');
+    this.contextEntries = entries.map(entry => {
       return new ContextEntry(entry);
     });
   }
@@ -10,11 +11,21 @@ export class Context {
   evaluate(context) {
     let result = {};
     for (const entry of this.contextEntries) {
-      const entryResult = entry.evaluate({
+      const entryValue = entry.evaluate({
         ...context,
         ...result
       });
-      result = { ...result, ...entryResult };
+
+      const entryName = entry.getName();
+
+      if (!entryName) {
+        return entryValue;
+      }
+
+      result = {
+        ...result,
+        [entryName]: entryValue
+      };
     }
 
     return result;
@@ -23,14 +34,15 @@ export class Context {
 
 class ContextEntry {
   constructor(moddleElement) {
-    this.name = moddleElement.get('variable').get('name');
+    this.name = moddleElement.get('variable')?.get('name');
     this.expression = new Expression(moddleElement.get('value'));
   }
 
   evaluate(context) {
-    const value = this.expression.evaluate(context);
-    return {
-      [this.name]: value
-    };
+    return this.expression.evaluate(context);
+  }
+
+  getName() {
+    return this.name;
   }
 }

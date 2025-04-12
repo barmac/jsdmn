@@ -15,16 +15,48 @@ describe('interpreter', function() {
     expect(result).to.eql(4);
   });
 
+  describe('context', function() {
 
-  it('should evaluate context', async function() {
+    it('should evaluate simple context', async function() {
 
-    // given
-    const dmn = getFixture('context.dmn');
+      // given
+      const dmn = getFixture('context.dmn');
 
-    // when
-    const result = await interpret(dmn, 'Decision', {});
+      // when
+      const result = await interpret(dmn, 'Decision', {});
 
-    // then
-    expect(result).to.eql({ expression: 4 });
+      // then
+      expect(result).to.eql({ expression: 4 });
+    });
+
+
+    it('should evaluate context with entries depending on each other', async function() {
+
+      // given
+      const dmn = getFixture('context.dmn');
+
+      // when
+      const result = await interpret(dmn, 'Decision with multiple entries', {});
+
+      // then
+      expect(result).to.eql({
+        first: 4,
+        second: 6
+      });
+    });
+
+
+    it('should evaluate context with result', async function() {
+
+      // given
+      const dmn = getFixture('context.dmn');
+
+      // when
+      const result = await interpret(dmn, 'Context with result', {});
+
+      // then
+      expect(result).to.eql(6);
+    });
   });
+
 });
