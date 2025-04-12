@@ -59,4 +59,20 @@ describe('interpreter', function() {
     });
   });
 
+
+  describe('function definition', function() {
+
+    it('should evaluate function definition', async function() {
+
+      // given
+      const dmn = getFixture('functionDefinition.dmn');
+
+      // when
+      const result = await interpret(dmn, 'Decision', {});
+
+      // then
+      expect(result).to.eql(8);
+    });
+  });
+
 });

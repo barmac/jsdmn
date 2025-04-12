@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="decision" name="Decision" namespace="http://camunda.org/schema/1.0/dmn" exporter="dmn-js (https://demo.bpmn.io/dmn)" exporterVersion="17.0.2">
+  <decision id="Decision_1lrhdf6" name="Decision">
+    <variable name="Decision" />
+    <context>
+      <contextEntry>
+        <variable name="fun" />
+        <functionDefinition>
+          <formalParameter name="param" typeRef="number" />
+          <literalExpression>
+            <text>param * 2</text>
+          </literalExpression>
+        </functionDefinition>
+      </contextEntry>
+      <contextEntry>
+        <literalExpression>
+          <text>fun(4)</text>
+        </literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_05sfxgt">
+      <dmndi:DMNShape id="DMNShape_1ewyw6i" dmnElementRef="Decision_1lrhdf6">
+        <dc:Bounds height="80" width="180" x="160" y="80" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>
