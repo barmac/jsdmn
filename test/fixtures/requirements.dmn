@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/" id="average" name="Average" namespace="http://camunda.org/schema/1.0/dmn" exporter="dmn-js (https://demo.bpmn.io/dmn)" exporterVersion="17.0.2">
+  <decision id="Decision_1t01ie8" name="Average">
+    <variable id="InformationItem_0ybdbna" name="Average" typeRef="number" />
+    <informationRequirement id="InformationRequirement_16arou0">
+      <requiredInput href="#InputData_0n84o1m" />
+    </informationRequirement>
+    <informationRequirement id="InformationRequirement_14r2369">
+      <requiredInput href="#InputData_0mxvyai" />
+    </informationRequirement>
+    <knowledgeRequirement id="KnowledgeRequirement_0cwz82v">
+      <requiredKnowledge href="#BusinessKnowledgeModel_0tjd1p9" />
+    </knowledgeRequirement>
+    <literalExpression id="LiteralExpression_1molpxa">
+      <text>Compute average([a, b])</text>
+    </literalExpression>
+  </decision>
+  <inputData id="InputData_0n84o1m" name="a" />
+  <inputData id="InputData_0mxvyai" name="b" />
+  <businessKnowledgeModel id="BusinessKnowledgeModel_0tjd1p9" name="Compute average">
+    <variable id="InformationItem_083m6se" name="Compute average" typeRef="number" />
+    <encapsulatedLogic id="FunctionDefinition_1m1vp7a">
+      <formalParameter name="params" typeRef="Any" />
+      <literalExpression id="LiteralExpression_0upj4wd">
+        <text>sum(params) / count(params)</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_05sfxgt">
+      <dmndi:DMNShape id="DMNShape_1hymrsr" dmnElementRef="Decision_1t01ie8">
+        <dc:Bounds height="80" width="180" x="300" y="80" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="DMNEdge_1kdrxa7" dmnElementRef="KnowledgeRequirement_0cwz82v">
+        <di:waypoint x="238" y="317" />
+        <di:waypoint x="359" y="160" />
+      </dmndi:DMNEdge>
+      <dmndi:DMNShape id="DMNShape_0924y2e" dmnElementRef="InputData_0n84o1m">
+        <dc:Bounds height="45" width="125" x="447" y="317" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="DMNEdge_07sxj1c" dmnElementRef="InformationRequirement_16arou0">
+        <di:waypoint x="510" y="317" />
+        <di:waypoint x="360" y="180" />
+        <di:waypoint x="360" y="160" />
+      </dmndi:DMNEdge>
+      <dmndi:DMNShape id="DMNShape_0snge4j" dmnElementRef="InputData_0mxvyai">
+        <dc:Bounds height="45" width="125" x="687" y="317" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="DMNEdge_0aa985r" dmnElementRef="InformationRequirement_14r2369">
+        <di:waypoint x="750" y="317" />
+        <di:waypoint x="420" y="180" />
+        <di:waypoint x="420" y="160" />
+      </dmndi:DMNEdge>
+      <dmndi:DMNShape id="DMNShape_0hsxtjk" dmnElementRef="BusinessKnowledgeModel_0tjd1p9">
+        <dc:Bounds height="46" width="135" x="152" y="317" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

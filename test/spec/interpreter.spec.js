@@ -75,4 +75,22 @@ describe('interpreter', function() {
     });
   });
 
+
+  describe('requirements', function() {
+
+    it('should resolve requirements', async function() {
+
+      // given
+      const dmn = getFixture('requirements.dmn');
+
+      // when
+      const result = await interpret(dmn, 'Average', {
+        a: 3,
+        b: 5
+      });
+
+      // then
+      expect(result).to.eql(4);
+    });
+  });
 });
