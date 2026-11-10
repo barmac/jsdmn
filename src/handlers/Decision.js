@@ -1,45 +1,30 @@
-import { BusinessKnowledgeModel } from './BusinessKnowledgeModel.js';
-import { Expression } from './Expression.js';
-import { InputData } from './InputData.js';
+import { createExpression } from './Expression.js';
+import { Requirements } from './requirements.js';
 
+/**
+ * A DMN `<decision>`.
+ */
 export class Decision {
-  constructor(moddleDecision, resolver) {
-    this.name = moddleDecision.get('name');
-    this.logic = new Expression(moddleDecision.get('decisionLogic'));
 
-    this.requiredInputs = [];
-    this.requiredDecisions = [];
-    this.requiredBKMs = [];
+  /**
+   * @param {object} element moddle `dmn:Decision`
+   * @param {import('../model.js').Model} model
+   */
+  constructor(element, model) {
+    this.id = element.get('id');
+    this.name = element.get('name');
+    this.model = model;
+    this.typeRef = element.get('variable')?.get('typeRef');
 
-    for (const informationRequirement of moddleDecision.get('informationRequirement')) {
-      const requiredInput = informationRequirement.get('requiredInput');
-      if (requiredInput) {
-        const inputData = resolver.resolve(moddleDecision, requiredInput.get('href'));
-        this.requiredInputs.push(new InputData(inputData, resolver));
-        continue;
-      }
+    const decisionLogic = element.get('decisionLogic');
 
-      const requiredDecision = informationRequirement.get('requiredDecision');
-      if (requiredDecision) {
-        const decision = resolver.resolve(moddleDecision, requiredDecision.get('href'));
-        this.requiredDecisions.push(new Decision(decision, resolver));
-        continue;
-      }
-    }
+    this.logic = decisionLogic ? createExpression(decisionLogic, model) : null;
 
-    for (const knowledgeRequirement of moddleDecision.get('knowledgeRequirement')) {
-      const requiredBKM = knowledgeRequirement.get('requiredKnowledge');
-      if (requiredBKM) {
-        const bkm = resolver.resolve(moddleDecision, requiredBKM.get('href'));
-        this.requiredBKMs.push(new BusinessKnowledgeModel(bkm, resolver));
-      }
-    }
-  }
-
-  evaluate(context) {
-    const ctx = this.createContext(context);
-
-    return this.logic.evaluate(ctx);
+    this.requirements = new Requirements(
+      model,
+      element.get('informationRequirement'),
+      element.get('knowledgeRequirement')
+    );
   }
 
   /**
@@ -51,17 +36,32 @@ export class Decision {
     return this.name;
   }
 
-  createContext(context) {
-    const ctx = { ...context };
+  get type() {
+    return this.model.resolveType(this.typeRef);
+  }
 
-    this.requiredDecisions.forEach((decision) => {
-      ctx[decision.getName()] = decision.evaluate(context);
+  /**
+   * Evaluate the decision (at most once per evaluation).
+   *
+   * @param {import('../evaluation.js').Evaluation} evaluation
+   */
+  evaluate(evaluation) {
+    return evaluation.resolve(this, () => {
+
+      const scope = this.requirements.populate({
+        ...evaluation.variables,
+        ...this.model.createScope()
+      }, evaluation);
+
+      if (!this.logic) {
+        evaluation.error(`decision <${ this.name }> has no decision logic`, this);
+
+        return null;
+      }
+
+      const value = this.logic.evaluate(scope, evaluation);
+
+      return this.model.coerce(value, this.type, evaluation, this, 'result');
     });
-
-    this.requiredBKMs.forEach((bkm) => {
-      ctx[bkm.getName()] = bkm.evaluate(context);
-    });
-
-    return ctx;
   }
 }

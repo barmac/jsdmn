@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="types" name="Types" namespace="http://jsdmn/types">
+
+  <itemDefinition name="tPerson">
+    <itemComponent name="name">
+      <typeRef>string</typeRef>
+    </itemComponent>
+    <itemComponent name="age">
+      <typeRef>number</typeRef>
+      <allowedValues>
+        <text>[0..150]</text>
+      </allowedValues>
+    </itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tNames" isCollection="true">
+    <typeRef>string</typeRef>
+  </itemDefinition>
+
+  <inputData id="Person" name="Person">
+    <variable name="Person" typeRef="tPerson" />
+  </inputData>
+
+  <decision id="Greeting" name="Greeting">
+    <variable name="Greeting" typeRef="string" />
+    <informationRequirement>
+      <requiredInput href="#Person" />
+    </informationRequirement>
+    <literalExpression>
+      <text>"Hello " + Person.name</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="Names" name="Names">
+    <variable name="Names" typeRef="tNames" />
+    <informationRequirement>
+      <requiredInput href="#Person" />
+    </informationRequirement>
+    <literalExpression>
+      <text>Person.name</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="Invalid" name="Invalid">
+    <variable name="Invalid" typeRef="number" />
+    <literalExpression>
+      <text>"not a number"</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="IsPerson" name="IsPerson">
+    <variable name="IsPerson" typeRef="boolean" />
+    <informationRequirement>
+      <requiredInput href="#Person" />
+    </informationRequirement>
+    <literalExpression>
+      <text>Person instance of tPerson</text>
+    </literalExpression>
+  </decision>
+</definitions>

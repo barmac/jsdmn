@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="decisionTable" name="Decision Table" namespace="http://jsdmn/decisionTable">
+
+  <inputData id="Customer" name="Customer">
+    <variable name="Customer" typeRef="string" />
+  </inputData>
+
+  <inputData id="OrderSize" name="Order Size">
+    <variable name="Order Size" typeRef="number" />
+  </inputData>
+
+  <decision id="Discount" name="Discount">
+    <variable name="Discount" typeRef="number" />
+    <informationRequirement>
+      <requiredInput href="#Customer" />
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#OrderSize" />
+    </informationRequirement>
+    <decisionTable hitPolicy="UNIQUE">
+      <input label="Customer">
+        <inputExpression typeRef="string">
+          <text>Customer</text>
+        </inputExpression>
+        <inputValues>
+          <text>"Business", "Private"</text>
+        </inputValues>
+      </input>
+      <input label="Order Size">
+        <inputExpression typeRef="number">
+          <text>Order Size</text>
+        </inputExpression>
+      </input>
+      <output name="Discount" typeRef="number">
+        <defaultOutputEntry>
+          <text>0</text>
+        </defaultOutputEntry>
+      </output>
+      <rule>
+        <inputEntry><text>"Business"</text></inputEntry>
+        <inputEntry><text>&lt; 10</text></inputEntry>
+        <outputEntry><text>0.1</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>"Business"</text></inputEntry>
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <outputEntry><text>0.15</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>"Private"</text></inputEntry>
+        <inputEntry><text>[5..20]</text></inputEntry>
+        <outputEntry><text>0.05</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="Bonus" name="Bonus">
+    <variable name="Bonus" typeRef="number" />
+    <informationRequirement>
+      <requiredInput href="#OrderSize" />
+    </informationRequirement>
+    <decisionTable hitPolicy="COLLECT" aggregation="SUM">
+      <input>
+        <inputExpression typeRef="number">
+          <text>Order Size</text>
+        </inputExpression>
+      </input>
+      <output name="Bonus" typeRef="number" />
+      <rule>
+        <inputEntry><text>&gt; 1</text></inputEntry>
+        <outputEntry><text>10</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>&gt; 10</text></inputEntry>
+        <outputEntry><text>20</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>1</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="Rating" name="Rating">
+    <variable name="Rating" />
+    <informationRequirement>
+      <requiredInput href="#OrderSize" />
+    </informationRequirement>
+    <decisionTable hitPolicy="PRIORITY">
+      <input>
+        <inputExpression typeRef="number">
+          <text>Order Size</text>
+        </inputExpression>
+      </input>
+      <output name="Rating" typeRef="string">
+        <outputValues>
+          <text>"high", "medium", "low"</text>
+        </outputValues>
+      </output>
+      <rule>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"low"</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <outputEntry><text>"high"</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>&gt;= 5</text></inputEntry>
+        <outputEntry><text>"medium"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="Classification" name="Classification">
+    <variable name="Classification" />
+    <informationRequirement>
+      <requiredInput href="#OrderSize" />
+    </informationRequirement>
+    <decisionTable hitPolicy="RULE ORDER">
+      <input>
+        <inputExpression typeRef="number">
+          <text>Order Size</text>
+        </inputExpression>
+      </input>
+      <output name="label" typeRef="string" />
+      <output name="weight" typeRef="number" />
+      <rule>
+        <inputEntry><text>&gt; 0</text></inputEntry>
+        <outputEntry><text>"positive"</text></outputEntry>
+        <outputEntry><text>1</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>even(?)</text></inputEntry>
+        <outputEntry><text>"even"</text></outputEntry>
+        <outputEntry><text>2</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

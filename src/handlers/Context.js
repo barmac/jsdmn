@@ -1,48 +1,52 @@
-import { Expression } from './Expression.js';
+import { createOptionalExpression } from './Expression.js';
 
+/**
+ * A boxed context. Entries are evaluated in order and may refer to the
+ * entries preceding them; an entry without a variable is the result.
+ */
 export class Context {
-  constructor(moddleElement) {
-    const entries = moddleElement.get('contextEntry');
-    this.contextEntries = entries.map(entry => {
-      return new ContextEntry(entry);
+
+  /**
+   * @param {object} element moddle `dmn:Context`
+   * @param {import('../model.js').Model} model
+   */
+  constructor(element, model) {
+    this.id = element.get('id');
+    this.model = model;
+
+    this.entries = element.get('contextEntry').map(entry => {
+      const variable = entry.get('variable');
+
+      return {
+        id: entry.get('id'),
+        name: variable?.get('name'),
+        typeRef: variable?.get('typeRef'),
+        expression: createOptionalExpression(entry.get('value'), model)
+      };
     });
   }
 
-  evaluate(context) {
-    let result = {};
-    for (const entry of this.contextEntries) {
-      const entryValue = entry.evaluate({
-        ...context,
-        ...result
-      });
+  evaluate(scope, evaluation) {
 
-      const entryName = entry.getName();
+    // functions defined in entries close over this (mutable) scope,
+    // enabling (mutual) recursion
+    const entryScope = { ...scope };
 
-      if (!entryName) {
-        return entryValue;
+    const result = {};
+
+    for (const entry of this.entries) {
+      const value = entry.expression.evaluate(entryScope, evaluation);
+
+      if (!entry.name) {
+        return value;
       }
 
-      result = {
-        ...result,
-        [entryName]: entryValue
-      };
+      const coerced = this.model.coerce(value, this.model.resolveType(entry.typeRef), evaluation, entry, 'context entry');
+
+      entryScope[entry.name] = coerced;
+      result[entry.name] = coerced;
     }
 
     return result;
-  }
-}
-
-class ContextEntry {
-  constructor(moddleElement) {
-    this.name = moddleElement.get('variable')?.get('name');
-    this.expression = new Expression(moddleElement.get('value'));
-  }
-
-  evaluate(context) {
-    return this.expression.evaluate(context);
-  }
-
-  getName() {
-    return this.name;
   }
 }

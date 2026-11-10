@@ -10,6 +10,12 @@ const files = {
 };
 
 export default [
+  {
+    ignores: [
+      'tmp/**',
+      'src/moddle/**'
+    ]
+  },
 
   // build + test
   ...bpmnIoPlugin.configs.node.map(config => {
