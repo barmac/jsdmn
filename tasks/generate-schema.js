@@ -1,12 +1,17 @@
 /**
- * Generates the DMN 1.5 moddle schemas in `src/moddle/` from the
- * DMN 1.3 schemas shipped with dmn-moddle.
+ * Generates the DMN 1.4 and DMN 1.5 moddle schemas in `src/moddle/` from
+ * the DMN 1.3 schemas shipped with dmn-moddle (which are used as-is for
+ * DMN 1.3).
  *
- * DMN 1.4 / 1.5 are (mostly) additive to DMN 1.3; the delta is:
+ * The versions are additive (cf. DMN13.xsd, DMN14.xsd, DMN15.xsd):
  *
- *   - <itemDefinition> gained <typeConstraint>
- *   - boxed <conditional>, <filter>, <for>, <every> and <some> expressions
- *   - <dmndi:DMNDiagram> gained @useAlternativeInputDataShape
+ *   DMN 1.4
+ *     - boxed <conditional>, <filter>, <for>, <every> and <some> expressions
+ *     - DMNDI unchanged (DMN 1.4 uses the DMN 1.3 DMNDI namespace)
+ *
+ *   DMN 1.5
+ *     - <itemDefinition> gained <typeConstraint>
+ *     - <dmndi:DMNDiagram> gained @useAlternativeInputDataShape
  *
  * Usage: node tasks/generate-schema.js
  */
@@ -17,30 +22,22 @@ import { dirname, resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
 
+const DMN14_URI = 'https://www.omg.org/spec/DMN/20211108/MODEL/';
 const DMN15_URI = 'https://www.omg.org/spec/DMN/20230324/MODEL/';
 const DMNDI15_URI = 'https://www.omg.org/spec/DMN/20230324/DMNDI/';
 
 const resources = dirname(require.resolve('dmn-moddle/resources/dmn/json/dmn13.json'));
 
-const dmn = JSON.parse(readFileSync(resolve(resources, 'dmn13.json'), 'utf8'));
-const dmndi = JSON.parse(readFileSync(resolve(resources, 'dmndi13.json'), 'utf8'));
+const read = (file) => JSON.parse(readFileSync(resolve(resources, file), 'utf8'));
 
 
-// DMN ////////////
+// DMN 1.4 ////////////
 
-dmn.uri = DMN15_URI;
+const dmn14 = read('dmn13.json');
 
-const itemDefinition = dmn.types.find(t => t.name === 'ItemDefinition');
+dmn14.uri = DMN14_URI;
 
-itemDefinition.properties.splice(2, 0, {
-  name: 'typeConstraint',
-  type: 'UnaryTests',
-  xml: {
-    serialize: 'property'
-  }
-});
-
-dmn.types.push(
+dmn14.types.push(
   {
     name: 'ChildExpression',
     properties: [
@@ -107,11 +104,30 @@ dmn.types.push(
 );
 
 
-// DMNDI ////////////
+// DMN 1.5 ////////////
 
-dmndi.uri = DMNDI15_URI;
+const dmn15 = JSON.parse(JSON.stringify(dmn14));
 
-const dmnDiagram = dmndi.types.find(t => t.name === 'DMNDiagram');
+dmn15.uri = DMN15_URI;
+
+const itemDefinition = dmn15.types.find(t => t.name === 'ItemDefinition');
+
+// <typeConstraint> follows <allowedValues> (cf. DMN15.xsd)
+const allowedValuesIdx = itemDefinition.properties.findIndex(p => p.name === 'allowedValues');
+
+itemDefinition.properties.splice(allowedValuesIdx + 1, 0, {
+  name: 'typeConstraint',
+  type: 'UnaryTests',
+  xml: {
+    serialize: 'property'
+  }
+});
+
+const dmndi15 = read('dmndi13.json');
+
+dmndi15.uri = DMNDI15_URI;
+
+const dmnDiagram = dmndi15.types.find(t => t.name === 'DMNDiagram');
 
 dmnDiagram.properties.push({
   name: 'useAlternativeInputDataShape',
@@ -127,8 +143,9 @@ const target = resolve(dirname(new URL(import.meta.url).pathname), '../src/moddl
 
 mkdirSync(target, { recursive: true });
 
-write('dmn15.js', dmn);
-write('dmndi15.js', dmndi);
+write('dmn14.js', dmn14);
+write('dmn15.js', dmn15);
+write('dmndi15.js', dmndi15);
 
 function write(file, schema) {
   const contents = [

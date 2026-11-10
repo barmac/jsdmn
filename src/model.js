@@ -42,10 +42,19 @@ export class Model {
    * @param {object} definitions moddle `dmn:Definitions`
    * @param {object} registry
    * @param {(namespace: string) => Model|null} registry.getModel
+   * @param {object} [options]
+   * @param {string} [options.version] DMN version of the model, e.g. `1.5`
    */
-  constructor(definitions, registry) {
+  constructor(definitions, registry, options = {}) {
     this.definitions = definitions;
     this.registry = registry;
+
+    /**
+     * DMN version of the model, e.g. `1.5`.
+     *
+     * @type {string|undefined}
+     */
+    this.version = options.version;
 
     this.id = definitions.get('id');
     this.name = definitions.get('name');

@@ -1,40 +1,68 @@
 import { DmnModdle } from 'dmn-moddle';
 
-import dmnSchema from './moddle/dmn15.js';
-import dmndiSchema from './moddle/dmndi15.js';
-
-const DMN15_NAMESPACE = 'https://www.omg.org/spec/DMN/20230324/MODEL/';
-const DMNDI15_NAMESPACE = 'https://www.omg.org/spec/DMN/20230324/DMNDI/';
+import dmn14Schema from './moddle/dmn14.js';
+import dmn15Schema from './moddle/dmn15.js';
+import dmndi15Schema from './moddle/dmndi15.js';
 
 /**
- * Model namespaces of DMN versions handled as DMN 1.5.
+ * Supported DMN versions, each parsed (strictly) with its own schema.
  */
-const DMN_NAMESPACES = [
-  'http://www.omg.org/spec/DMN/20151101/dmn.xsd',
-  'http://www.omg.org/spec/DMN/20180521/MODEL/',
-  'https://www.omg.org/spec/DMN/20191111/MODEL/',
-  'https://www.omg.org/spec/DMN/20211108/MODEL/'
-];
+export const DMN_VERSIONS = {
+  '1.3': {
+    namespace: 'https://www.omg.org/spec/DMN/20191111/MODEL/',
+    dmndi: 'https://www.omg.org/spec/DMN/20191111/DMNDI/'
+  },
+  '1.4': {
+    namespace: 'https://www.omg.org/spec/DMN/20211108/MODEL/',
+
+    // DMN 1.4 did not revise DMNDI
+    dmndi: 'https://www.omg.org/spec/DMN/20191111/DMNDI/'
+  },
+  '1.5': {
+    namespace: 'https://www.omg.org/spec/DMN/20230324/MODEL/',
+    dmndi: 'https://www.omg.org/spec/DMN/20230324/DMNDI/'
+  }
+};
+
+/**
+ * Older DMN versions, read as DMN 1.3.
+ */
+const LEGACY_VERSIONS = {
+  'http://www.omg.org/spec/DMN/20151101/dmn.xsd': '1.1',
+  'http://www.omg.org/spec/DMN/20180521/MODEL/': '1.2'
+};
 
 const DMNDI_NAMESPACES = [
   'http://www.omg.org/spec/DMN/20180521/DMNDI/',
   'https://www.omg.org/spec/DMN/20191111/DMNDI/',
-  'https://www.omg.org/spec/DMN/20211108/DMNDI/'
+  'https://www.omg.org/spec/DMN/20230324/DMNDI/'
 ];
 
-const moddle = DmnModdle({
-  dmn: dmnSchema,
-  dmndi: dmndiSchema
-});
+const moddles = {};
+
+function getModdle(version) {
+
+  if (!moddles[version]) {
+    moddles[version] = version === '1.5'
+      ? DmnModdle({ dmn: dmn15Schema, dmndi: dmndi15Schema })
+      : version === '1.4'
+        ? DmnModdle({ dmn: dmn14Schema })
+        : DmnModdle();
+  }
+
+  return moddles[version];
+}
 
 /**
  * @typedef {object} ParseResult
  * @property {object} definitions moddle `dmn:Definitions`
+ * @property {string} version DMN version of the model, e.g. `1.5`
  * @property {object[]} warnings
  */
 
 /**
- * Parse DMN 1.1 - 1.5 XML.
+ * Parse DMN 1.3, 1.4 or 1.5 XML (as well as DMN 1.1 and 1.2, read as
+ * DMN 1.3). Elements not defined by the model's DMN version are rejected.
  *
  * @param {string} xml
  *
@@ -42,31 +70,71 @@ const moddle = DmnModdle({
  */
 export async function parseDmn(xml) {
 
-  const { rootElement, warnings } = await moddle.fromXML(normalizeNamespaces(xml), 'dmn:Definitions', { lax: false });
+  const namespace = getDefinitionsNamespace(xml);
+
+  let version = Object.keys(DMN_VERSIONS).find(v => DMN_VERSIONS[v].namespace === namespace);
+
+  if (!version && LEGACY_VERSIONS[namespace]) {
+    version = LEGACY_VERSIONS[namespace];
+
+    xml = xml.replaceAll(namespace, DMN_VERSIONS['1.3'].namespace);
+  }
+
+  if (!version) {
+    throw new Error(
+      namespace
+        ? `unsupported DMN namespace <${ namespace }>`
+        : 'not a DMN document: no <definitions> element found'
+    );
+  }
+
+  const parseVersion = DMN_VERSIONS[version] ? version : '1.3';
+
+  // diagram information does not affect execution, accept any DMNDI version
+  for (const dmndi of DMNDI_NAMESPACES) {
+    if (dmndi !== DMN_VERSIONS[parseVersion].dmndi) {
+      xml = xml.replaceAll(dmndi, DMN_VERSIONS[parseVersion].dmndi);
+    }
+  }
+
+  const { rootElement, warnings } = await getModdle(parseVersion).fromXML(xml, 'dmn:Definitions', { lax: false });
 
   return {
     definitions: rootElement,
+    version,
     warnings
   };
 }
 
 /**
- * Rewrite the namespaces of older DMN versions to DMN 1.5, which is a
- * superset of them for the purpose of execution.
+ * Get the namespace of the `<definitions>` root element.
  *
  * @param {string} xml
  *
- * @return {string}
+ * @return {string|null}
  */
-export function normalizeNamespaces(xml) {
+export function getDefinitionsNamespace(xml) {
 
-  for (const namespace of DMN_NAMESPACES) {
-    xml = xml.replaceAll(namespace, DMN15_NAMESPACE);
+  // skip XML declaration, processing instructions, comments and doctype
+  const content = xml.replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>/g, '');
+
+  const match = /<(?:([A-Za-z_][\w.-]*):)?definitions(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>/.exec(content);
+
+  if (!match) {
+    return null;
   }
 
-  for (const namespace of DMNDI_NAMESPACES) {
-    xml = xml.replaceAll(namespace, DMNDI15_NAMESPACE);
+  const [ , prefix = '', attributes ] = match;
+
+  const pattern = /xmlns(?::([\w.-]+))?\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+
+  for (let declaration; (declaration = pattern.exec(attributes));) {
+    const [ , declaredPrefix = '', doubleQuoted, singleQuoted ] = declaration;
+
+    if (declaredPrefix === prefix) {
+      return doubleQuoted ?? singleQuoted;
+    }
   }
 
-  return xml;
+  return null;
 }

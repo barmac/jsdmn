@@ -23,9 +23,9 @@ export class Loader {
    * @return {Promise<Model>}
    */
   async load(xml) {
-    const { definitions } = await parseDmn(xml);
+    const { definitions, version } = await parseDmn(xml);
 
-    const model = new Model(definitions, this);
+    const model = new Model(definitions, this, { version });
 
     // a model re-loaded under the same namespace replaces the old one
     this.models = this.models.filter(m => m.namespace !== model.namespace);

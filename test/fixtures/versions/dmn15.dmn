@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="dmn15" name="DMN 1.5" namespace="http://jsdmn/versions/dmn15">
+  <itemDefinition id="tTeam" name="tTeam" isCollection="true">
+    <typeRef>string</typeRef>
+    <typeConstraint>
+      <text>count(?) &lt;= 3</text>
+    </typeConstraint>
+  </itemDefinition>
+  <inputData id="Team" name="Team">
+    <variable id="Team_variable" name="Team" typeRef="tTeam" />
+  </inputData>
+  <decision id="TeamSize" name="Team Size">
+    <variable id="TeamSize_variable" name="Team Size" typeRef="number" />
+    <informationRequirement id="TeamSize_requirement">
+      <requiredInput href="#Team" />
+    </informationRequirement>
+    <literalExpression id="TeamSize_value">
+      <text>count(Team)</text>
+    </literalExpression>
+  </decision>
+  <decision id="InRange" name="In Range">
+    <variable id="InRange_variable" name="In Range" typeRef="boolean" />
+    <informationRequirement id="InRange_requirement">
+      <requiredInput href="#Team" />
+    </informationRequirement>
+    <literalExpression id="InRange_value">
+      <text>count(Team) in range("[1..3]")</text>
+    </literalExpression>
+  </decision>
+  <decision id="Captain" name="Captain">
+    <variable id="Captain_variable" name="Captain" typeRef="tTeam" />
+    <informationRequirement id="Captain_requirement">
+      <requiredInput href="#Team" />
+    </informationRequirement>
+    <conditional id="Captain_conditional">
+      <if>
+        <literalExpression><text>count(Team) &gt; 0</text></literalExpression>
+      </if>
+      <then>
+        <literalExpression><text>list replace(Team, 1, upper case(Team[1]))</text></literalExpression>
+      </then>
+      <else>
+        <literalExpression><text>[]</text></literalExpression>
+      </else>
+    </conditional>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_1" useAlternativeInputDataShape="true">
+      <dmndi:DMNShape id="Team_shape" dmnElementRef="Team">
+        <dc:Bounds height="45" width="125" x="187" y="400" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="TeamSize_shape" dmnElementRef="TeamSize">
+        <dc:Bounds height="80" width="180" x="160" y="200" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>
