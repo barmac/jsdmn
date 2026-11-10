@@ -15,8 +15,6 @@
  *   TCK_LEVELS   - comma separated test case folders to run
  *                  (default: compliance-level-2,compliance-level-3)
  *   TCK_RESULTS  - directory to write tck_results.csv to (default: tmp/tck-results)
- *   TCK_STRICT_ERRORS - additionally require that the engine reports an error
- *                  for result nodes marked with `errorResult="true"`
  *   TCK_DMN_VERSIONS - comma separated DMN versions to run the TCK as
  *                  (default: 1.5,1.4,1.3)
  */
@@ -39,7 +37,6 @@ const RESULTS_DIR = resolve(ROOT, process.env.TCK_RESULTS || 'tmp/tck-results');
 
 const LEVELS = (process.env.TCK_LEVELS || 'compliance-level-2,compliance-level-3').split(',');
 const FILTER = process.env.TCK_FILTER || null;
-const STRICT_ERRORS = !!process.env.TCK_STRICT_ERRORS;
 
 const VERSIONS = (process.env.TCK_DMN_VERSIONS || [ ...DMN_VERSIONS ].reverse().join(',')).split(',');
 
@@ -263,8 +260,16 @@ function runTestCase(engine, model, testCase) {
       failures.push(`<${ result.name }> ${ difference }`);
     }
 
-    if (STRICT_ERRORS && result.errorResult && !evaluationMessages.some(m => m.severity === 'error' || m.severity === 'warning')) {
+    const error = evaluationMessages.find(m => m.severity === 'error');
+
+    // results marked as errors must be null and be reported as errors
+    if (result.errorResult && !error) {
       failures.push(`<${ result.name }> expected an error to be reported`);
+    }
+
+    // errors explain null results, they must not be reported for other results
+    if (!result.errorResult && result.expected !== null && error) {
+      failures.push(`<${ result.name }> unexpected error reported: ${ error.message }`);
     }
   };
 
