@@ -1,4 +1,4 @@
-import { parseDmn } from './parser.js';
+import { Engine } from './engine.js';
 
 /**
  * Interpret a decision from a given DMN with given context.
@@ -6,10 +6,13 @@ import { parseDmn } from './parser.js';
  * @param {string} dmn
  * @param {string} decisionName
  * @param {object} context
+ *
+ * @return {Promise<any>}
  */
 export async function interpret(dmn, decisionName, context) {
-  const parseResult = await parseDmn(dmn);
-  const decision = parseResult.decisions.find(d => d.getName() === decisionName);
+  const engine = new Engine();
 
-  return decision.evaluate(context);
+  await engine.load(dmn);
+
+  return engine.evaluateDecision(decisionName, context);
 }

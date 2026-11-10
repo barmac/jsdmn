@@ -1,16 +1,20 @@
 {
   "name": "jsdmn",
   "version": "0.1.0",
-  "description": "DMN 1.3 interpreter for JavaScript",
+  "description": "DMN 1.5 interpreter for JavaScript",
   "type": "module",
   "files": [
     "src"
   ],
   "scripts": {
-    "all": "run-s lint test",
+    "all": "run-s lint test tck",
     "lint": "eslint .",
     "dev": "nodemon --exec npm test",
-    "test": "mocha --reporter=spec --recursive test/spec"
+    "test": "mocha --reporter=spec --recursive test/spec",
+    "pretck": "npm run tck:fetch",
+    "tck": "mocha --reporter=dot --timeout=10000 test/tck/tck.spec.js",
+    "tck:fetch": "node tasks/fetch-tck.js",
+    "generate-schema": "node tasks/generate-schema.js"
   },
   "repository": {
     "type": "git",
@@ -19,7 +23,10 @@
   "main": "src/engine.js",
   "keywords": [
     "dmn",
-    "intepreter"
+    "feel",
+    "interpreter",
+    "decision",
+    "dmn-tck"
   ],
   "author": {
     "name": "Maciej Barelkowski",
@@ -27,15 +34,20 @@
   },
   "license": "MIT",
   "dependencies": {
-    "dmn-moddle": "^10.0.0",
-    "feelin": "^3.2.0"
+    "dmn-moddle": "^12.2.1",
+    "feelin": "^8.2.0",
+    "temporal-polyfill": "^1.0.8"
   },
   "devDependencies": {
-    "chai": "^5.1.2",
+    "chai": "^6.3.0",
     "eslint": "^9.17.0",
     "eslint-plugin-bpmn-io": "^2.0.2",
-    "mocha": "^11.0.1",
+    "mocha": "^12.0.3",
     "nodemon": "^3.1.9",
-    "npm-run-all2": "^7.0.2"
+    "npm-run-all2": "^7.0.2",
+    "saxen": "^11.2.0"
+  },
+  "engines": {
+    "node": ">= 22"
   }
 }
