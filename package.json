@@ -7,10 +7,13 @@
     "src"
   ],
   "scripts": {
-    "all": "run-s lint test",
+    "all": "run-s lint test tck",
     "lint": "eslint .",
     "dev": "nodemon --exec npm test",
     "test": "mocha --reporter=spec --recursive test/spec",
+    "pretck": "npm run tck:fetch",
+    "tck": "mocha --reporter=dot --timeout=10000 test/tck/tck.spec.js",
+    "tck:fetch": "node tasks/fetch-tck.js",
     "generate-schema": "node tasks/generate-schema.js"
   },
   "repository": {
@@ -41,6 +44,7 @@
     "eslint-plugin-bpmn-io": "^2.0.2",
     "mocha": "^12.0.3",
     "nodemon": "^3.1.9",
-    "npm-run-all2": "^7.0.2"
+    "npm-run-all2": "^7.0.2",
+    "saxen": "^11.2.0"
   }
 }
