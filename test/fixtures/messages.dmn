@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="messages" name="Messages" namespace="http://jsdmn/messages">
+  <decision id="Division" name="Division">
+    <variable name="Division" />
+    <literalExpression>
+      <text>10 / 0</text>
+    </literalExpression>
+  </decision>
+  <decision id="NullOperand" name="Null Operand">
+    <variable name="Null Operand" />
+    <literalExpression>
+      <text>"Hello " + name</text>
+    </literalExpression>
+  </decision>
+  <decision id="InvalidArgument" name="Invalid Argument">
+    <variable name="Invalid Argument" />
+    <literalExpression>
+      <text>sqrt("4")</text>
+    </literalExpression>
+  </decision>
+  <decision id="Recovered" name="Recovered">
+    <variable name="Recovered" />
+    <literalExpression>
+      <text>if {a: null}.a.b = null then "none" else "some"</text>
+    </literalExpression>
+  </decision>
+  <decision id="ThreeValuedLogic" name="Three Valued Logic">
+    <variable name="Three Valued Logic" />
+    <literalExpression>
+      <text>all([true, null])</text>
+    </literalExpression>
+  </decision>
+  <decision id="MissingEntry" name="Missing Entry">
+    <variable name="Missing Entry" />
+    <literalExpression>
+      <text>get value({a: 1}, "b")</text>
+    </literalExpression>
+  </decision>
+</definitions>

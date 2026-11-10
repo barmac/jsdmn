@@ -3,8 +3,8 @@
  * @property {'error'|'warning'} severity
  * @property {string} message
  * @property {string} [type]
- * @property {string} [elementId]
- * @property {string} [elementName]
+ * @property {string} [elementId] id of the element (e.g. the expression) reporting the message
+ * @property {string} [elementName] name of the DRG element (decision, BKM, ...) the message originates from
  */
 
 /**
@@ -35,6 +35,13 @@ export class Evaluation {
      * @type {Set<object>}
      */
     this.pending = new Set();
+
+    /**
+     * DRG elements currently being evaluated.
+     *
+     * @type {object[]}
+     */
+    this.stack = [];
   }
 
   /**
@@ -65,13 +72,31 @@ export class Evaluation {
     this.pending.add(element);
 
     try {
-      const value = evaluate();
+      const value = this.within(element, evaluate);
 
       this.results.set(element, value);
 
       return value;
     } finally {
       this.pending.delete(element);
+    }
+  }
+
+  /**
+   * Evaluate in the context of the given DRG element, attributing
+   * messages to it.
+   *
+   * @param {object} element
+   * @param {() => any} evaluate
+   */
+  within(element, evaluate) {
+
+    this.stack.push(element);
+
+    try {
+      return evaluate();
+    } finally {
+      this.stack.pop();
     }
   }
 
@@ -92,12 +117,15 @@ export class Evaluation {
   }
 
   addMessage(severity, message, element, type) {
+
+    const owner = element?.name ? element : this.stack[this.stack.length - 1];
+
     this.messages.push({
       severity,
       message,
       type,
-      elementId: element?.id,
-      elementName: element?.name
+      elementId: element?.id ?? owner?.id,
+      elementName: element?.name ?? owner?.name
     });
   }
 

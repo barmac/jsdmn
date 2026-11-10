@@ -264,6 +264,77 @@ describe('evaluator', function() {
   });
 
 
+  describe('messages', function() {
+
+    let engine;
+
+    beforeEach(async function() {
+      engine = new Engine();
+      await engine.load(getFixture('messages.dmn'));
+    });
+
+    async function evaluate(name, inputs) {
+      return engine.evaluate('decision', name, inputs);
+    }
+
+
+    it('should report division by zero as error', async function() {
+
+      // when
+      const { value, messages } = await evaluate('Division');
+
+      // then
+      expect(value).to.be.null;
+      expect(messages).to.have.length(1);
+      expect(messages[0]).to.include({ severity: 'error', elementName: 'Division' });
+      expect(messages[0].message).to.include('division by zero');
+    });
+
+
+    it('should report null operand as error', async function() {
+
+      // when
+      const { value, messages } = await evaluate('Null Operand', { name: null });
+
+      // then
+      expect(value).to.be.null;
+      expect(messages.map(m => m.severity)).to.eql([ 'error' ]);
+    });
+
+
+    it('should report invalid builtin arguments as error', async function() {
+
+      // when
+      const { value, messages } = await evaluate('Invalid Argument');
+
+      // then
+      expect(value).to.be.null;
+      expect(messages).to.have.length(1);
+      expect(messages[0]).to.include({ severity: 'error', type: 'INVALID_ARGUMENTS' });
+      expect(messages[0].message).to.include('<sqrt> returned null for ("4")');
+    });
+
+
+    it('should report problems as warnings if a result is computed', async function() {
+
+      // when
+      const { value, messages } = await evaluate('Recovered');
+
+      // then
+      expect(value).to.eql('none');
+      expect(messages.map(m => m.severity)).to.eql([ 'warning' ]);
+    });
+
+
+    it('should not report regular null results', async function() {
+
+      // then
+      expect(await evaluate('Three Valued Logic')).to.eql({ value: null, messages: [] });
+      expect(await evaluate('Missing Entry')).to.eql({ value: null, messages: [] });
+    });
+  });
+
+
   describe('imports', function() {
 
     let engine;

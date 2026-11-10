@@ -52,7 +52,7 @@ import {
   invocationFailure
 } from './functions.js';
 
-import { getBuiltin, registerBuiltin } from './builtins.js';
+import { getBuiltin, isBuiltin, registerBuiltin } from './builtins.js';
 
 import { createRangeFunction } from './builtins/ranges.js';
 
@@ -631,6 +631,8 @@ class Interpreter {
   getProperty(base, name, node) {
 
     if (base === null) {
+      this.warn('NO_PROPERTY_FOUND', `cannot access <${ name }> of <null>`, node);
+
       return null;
     }
 
@@ -801,6 +803,11 @@ class Interpreter {
 
     if (error) {
       this.warn('FUNCTION_INVOCATION_FAILURE', `failed to invoke <${ normalizeName(name) }>: ${ error }`, node);
+    } else if (value === null && isBuiltin(fn) && !isRegularNullResult(fn, args)) {
+
+      // builtins yield null if they cannot compute a result, e.g.
+      // for missing, null or invalid arguments
+      this.warn('INVALID_ARGUMENTS', `<${ normalizeName(name) }> returned null for ${ describeArguments(args) }`, node);
     }
 
     return value;
@@ -895,6 +902,8 @@ class Interpreter {
       const value = normalize(this.evaluate(children[1], scope));
 
       if (value === null) {
+        this.warn('INVALID_TYPE', 'cannot negate <null>', node);
+
         return null;
       }
 
@@ -917,6 +926,8 @@ class Interpreter {
     const right = normalize(this.evaluate(rightNode, scope));
 
     if (left === null || right === null) {
+      this.warn('INVALID_TYPE', `cannot apply <${ opNode.text }> to <${ getType(left) }> and <${ getType(right) }>`, node);
+
       return null;
     }
 
@@ -926,6 +937,10 @@ class Interpreter {
       this.warn('INVALID_TYPE', `cannot apply <${ opNode.text }> to <${ getType(left) }> and <${ getType(right) }>`, node);
 
       return null;
+    }
+
+    if (result === null) {
+      this.warn('INVALID_ARGUMENTS', opNode.text === '/' ? 'division by zero' : `<${ node.text }> is not a finite number`, node);
     }
 
     return result;
@@ -943,23 +958,35 @@ class Interpreter {
       const low = normalize(this.evaluate(children[2], scope));
       const high = normalize(this.evaluate(children[4], scope));
 
-      return and(
+      const result = and(
         compareWith('>=', left, low),
         compareWith('<=', left, high)
       );
+
+      if (result === null) {
+        this.warn('NOT_COMPARABLE', `cannot test <${ getType(left) }> between <${ getType(low) }> and <${ getType(high) }>`, node);
+      }
+
+      return result;
     }
 
     if (opNode.type === 'in') {
       const target = children[2].type === '(' ? children[3] : children[2];
 
-      return this.testMembership(left, target, scope);
+      const result = this.testMembership(left, target, scope);
+
+      if (result === null) {
+        this.warn('NOT_COMPARABLE', `cannot test whether <${ getType(left) }> is in <${ target.text }>`, node);
+      }
+
+      return result;
     }
 
     const right = normalize(this.evaluate(children[2], scope));
 
     const result = compareWith(opNode.text, left, right);
 
-    if (result === null && left !== null && right !== null) {
+    if (result === null) {
       this.warn('NOT_COMPARABLE', `cannot compare <${ getType(left) }> and <${ getType(right) }>`, node);
     }
 
@@ -987,7 +1014,20 @@ class Interpreter {
       return false;
     }
 
-    return and(left, normalize(this.evaluate(node.children[2], scope)));
+    const right = normalize(this.evaluate(node.children[2], scope));
+
+    this.checkBoolean(node, left, right);
+
+    return and(left, right);
+  }
+
+  checkBoolean(node, ...values) {
+
+    const invalid = values.find(value => value !== null && typeof value !== 'boolean');
+
+    if (invalid !== undefined) {
+      this.warn('INVALID_TYPE', `expected <boolean>, got <${ getType(invalid) }>`, node);
+    }
   }
 
   Disjunction(node, scope) {
@@ -998,7 +1038,11 @@ class Interpreter {
       return true;
     }
 
-    return or(left, normalize(this.evaluate(node.children[2], scope)));
+    const right = normalize(this.evaluate(node.children[2], scope));
+
+    this.checkBoolean(node, left, right);
+
+    return or(left, right);
   }
 
   IfExpression(node, scope) {
@@ -1317,6 +1361,73 @@ class Interpreter {
 
     return equals(input, value);
   }
+}
+
+/**
+ * Builtins for which `null` is a regular result rather than a sign of
+ * invalid arguments.
+ */
+const REGULAR_NULL_RESULTS = {
+
+  // three-valued logic over (null) booleans
+  'not': (args) => {
+    const [ negand ] = Array.isArray(args) ? args : [ args.negand ];
+
+    return Array.isArray(args) ? args.length === 1 && negand === null : negand === null;
+  },
+  'all': (args) => isBooleanList(args),
+  'any': (args) => isBooleanList(args),
+
+  // maps null to null
+  'string': () => true,
+
+  // a context entry may be missing or null
+  'get value': (args) => {
+    const [ context, key ] = Array.isArray(args) ? args : [ args.m, args.key ];
+
+    return isContext(context) && (typeof key === 'string' || Array.isArray(key));
+  }
+};
+
+/**
+ * Whether the arguments of `all` / `any` are booleans (or `null`),
+ * given as single list or as variable arguments.
+ */
+function isBooleanList(args) {
+
+  const items = Array.isArray(args)
+    ? (args.length === 1 ? (Array.isArray(args[0]) ? args[0] : null) : args.length ? args : null)
+    : (Array.isArray(args.list) ? args.list : null);
+
+  return !!items && items.every(item => item === null || typeof item === 'boolean');
+}
+
+function isRegularNullResult(fn, args) {
+  return Object.entries(REGULAR_NULL_RESULTS).some(([ name, test ]) => getBuiltin(name) === fn && test(args));
+}
+
+function describeArguments(args) {
+
+  const describe = (value) => {
+
+    if (value === null || value === undefined) {
+      return 'null';
+    }
+
+    if (typeof value === 'string') {
+      return JSON.stringify(value);
+    }
+
+    const type = getType(value);
+
+    return type === 'list' || type === 'context' || type === 'function' ? `<${ type }>` : String(value);
+  };
+
+  if (Array.isArray(args)) {
+    return args.length ? `(${ args.map(describe).join(', ') })` : '()';
+  }
+
+  return `(${ Object.entries(args).map(([ key, value ]) => `${ key }: ${ describe(value) }`).join(', ') })`;
 }
 
 function isParameters(node) {

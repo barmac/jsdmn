@@ -263,6 +263,15 @@ describe('feel', function() {
     });
 
 
+    it('should report invalid operations', function() {
+      expect(evaluate('null.b').warnings[0]).to.include({ type: 'NO_PROPERTY_FOUND' });
+      expect(evaluate('1 + null').warnings[0]).to.include({ type: 'INVALID_TYPE' });
+      expect(evaluate('null between 1 and 10').warnings[0]).to.include({ type: 'NOT_COMPARABLE' });
+      expect(evaluate('modulo(10, null)').warnings[0]).to.include({ type: 'INVALID_ARGUMENTS' });
+      expect(evaluate('not(null)').warnings).to.be.empty;
+    });
+
+
     it('should report warnings', function() {
 
       // when

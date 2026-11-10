@@ -76,4 +76,22 @@ export function registerBuiltin(name, fn) {
   registry.set(name, fn);
 }
 
+/**
+ * Whether the given value is a builtin function.
+ *
+ * @param {any} fn
+ *
+ * @return {boolean}
+ */
+export function isBuiltin(fn) {
+
+  for (const builtin of registry.values()) {
+    if (builtin === fn) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export { invocationFailure };

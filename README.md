@@ -52,13 +52,22 @@ await engine.evaluateBusinessKnowledgeModel('Double', { x: 21 });
 
 ### Messages
 
-Errors (e.g. values not conforming to their type, failing function invocations) evaluate to `null`, as specified by DMN. To understand why, evaluate with `engine.evaluate`, which returns the reported messages, too:
+Errors (e.g. values not conforming to their type, division by zero, `null` operands, invalid builtin function arguments) evaluate to `null`, as specified by DMN. To understand why, evaluate with `engine.evaluate`, which returns the reported messages, too:
 
 ```javascript
-const { value, messages } = await engine.evaluate('decision', 'Decision', inputs);
+const { value, messages } = await engine.evaluate('decision', 'Decision', { name: null });
 
-// messages: [ { severity: 'error', message: '...', elementId, elementName } ]
+// value: null
+// messages: [ {
+//   severity: 'error',
+//   type: 'INVALID_TYPE',
+//   message: 'cannot apply <+> to <string> and <Null> (in <"Hello " + name>)',
+//   elementId: 'Decision_1',
+//   elementName: 'Decision'
+// } ]
 ```
+
+Problems that cause an expression to evaluate to `null` are reported as errors. Problems an expression recovers from, e.g. accessing a property of `null` in `if a.b = null then "none" else a.b`, are reported as warnings. Regular `null` results, such as `not(null)` (three-valued logic) or `get value(context, "missing key")`, are not reported.
 
 ### DMN versions
 
@@ -131,8 +140,9 @@ The test run can be customized via environment variables:
 * `TCK_DIR` - location of the TCK checkout (default: `tmp/dmn-tck`)
 * `TCK_FILTER` - only run test case folders containing the given string, e.g. `TCK_FILTER=0085 npm run tck`
 * `TCK_LEVELS` - comma separated test case folders to run (default: `compliance-level-2,compliance-level-3`, add `non-compliant` to run the TCK's non-compliant tests)
-* `TCK_STRICT_ERRORS` - additionally require the engine to report an error for results expected to be errors (`errorResult="true"`)
 * `TCK_DMN_VERSIONS` - comma separated DMN versions to run the TCK as (default: `1.5,1.4,1.3`)
+
+Results expected to be errors (`errorResult="true"`) must evaluate to `null` and be reported as an error; results expected to be non-`null` must not report errors.
 
 Numbers are compared with a relative tolerance of `1e-12`; expected values given with 7 or more fraction digits (e.g. results of `exp(4)`) are compared at that precision. Known failures can be registered in [`test/tck/known-failures.js`](./test/tck/known-failures.js); there are none.
 

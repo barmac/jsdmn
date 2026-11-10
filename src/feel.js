@@ -69,7 +69,7 @@ export function evaluateExpression(text, scope, evaluation, element, model) {
   try {
     const { value, warnings } = feelEvaluate(text, scope, getOptions(model));
 
-    report(evaluation, element, text, warnings);
+    report(evaluation, element, text, warnings, value);
 
     return value;
   } catch (error) {
@@ -100,7 +100,7 @@ export function evaluateUnaryTests(text, value, scope, evaluation, element, mode
   try {
     const { value: result, warnings } = feelUnaryTest(text, value, scope, getOptions(model));
 
-    report(evaluation, element, text, warnings);
+    report(evaluation, element, text, warnings, result);
 
     return result;
   } catch (error) {
@@ -270,13 +270,19 @@ export function splitUnaryTests(text) {
 
 // helpers ///////////////
 
-function report(evaluation, element, text, warnings) {
+/**
+ * Report problems encountered while evaluating FEEL. They are errors if
+ * they caused the expression to evaluate to `null`, warnings otherwise.
+ */
+function report(evaluation, element, text, warnings, result) {
 
   if (!evaluation || !warnings || !warnings.length) {
     return;
   }
 
+  const severity = result === null ? 'error' : 'warning';
+
   for (const warning of warnings) {
-    evaluation.warn(`${ warning.message } (in <${ text }>)`, element, warning.type);
+    evaluation.addMessage(severity, `${ warning.message } (in <${ text }>)`, element, warning.type);
   }
 }

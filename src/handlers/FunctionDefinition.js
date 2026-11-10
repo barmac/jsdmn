@@ -83,9 +83,11 @@ export class FunctionDefinition {
         fnScope[parameter.name] = result;
       }
 
-      const value = this.body.evaluate(fnScope, evaluation);
+      return evaluation.within(owner, () => {
+        const value = this.body.evaluate(fnScope, evaluation);
 
-      return model.coerce(value, returnType, evaluation, owner, 'result');
+        return model.coerce(value, returnType, evaluation, owner, 'result');
+      });
     }, this.parameters.map(p => p.name), { type });
   }
 
