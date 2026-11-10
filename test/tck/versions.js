@@ -1,9 +1,12 @@
 /**
- * Re-expressing the (DMN 1.5) TCK models in earlier DMN versions.
+ * Re-expressing TCK models in other DMN versions.
+ *
+ * The latest TCK is authored in DMN 1.5; earlier TCK revisions (e.g. the
+ * `DMNv1.3` and `DMNv1.4` tags) in earlier versions.
  */
 
 /**
- * The DMN version the TCK models are authored in.
+ * The DMN version the latest TCK models are authored in.
  */
 export const TCK_DMN_VERSION = '1.5';
 
@@ -36,7 +39,18 @@ const INTRODUCED_ELEMENTS = {
 export const DMN_VERSIONS = Object.keys(NAMESPACES);
 
 /**
- * Elements used in a DMN 1.5 model that do not exist in the given version.
+ * The DMN version a model is authored in.
+ *
+ * @param {string} xml
+ *
+ * @return {string|null}
+ */
+export function getModelVersion(xml) {
+  return DMN_VERSIONS.find(version => xml.includes(`"${ NAMESPACES[version].model }"`)) || null;
+}
+
+/**
+ * Elements used in a model that do not exist in the given version.
  *
  * @param {string} xml
  * @param {string} version
@@ -53,7 +67,9 @@ export function getUnsupportedElements(xml, version) {
 }
 
 /**
- * Convert a DMN 1.5 model to the given DMN version.
+ * Convert a model to the given DMN version. Converting to a later
+ * version is always possible, converting to an earlier one only if
+ * the model uses no elements introduced later (cf. {@link getUnsupportedElements}).
  *
  * @param {string} xml
  * @param {string} version
@@ -62,24 +78,30 @@ export function getUnsupportedElements(xml, version) {
  */
 export function convertModel(xml, version) {
 
-  if (version === TCK_DMN_VERSION) {
+  const sourceVersion = getModelVersion(xml);
+
+  if (!sourceVersion || sourceVersion === version) {
     return xml;
   }
 
-  const from = NAMESPACES[TCK_DMN_VERSION];
+  const from = NAMESPACES[sourceVersion];
   const to = NAMESPACES[version];
 
   if (!to) {
     throw new Error(`unsupported DMN version <${ version }>`);
   }
 
-  return xml
+  xml = xml
     .replaceAll(from.model, to.model)
     .replaceAll(from.dmndi, to.dmndi)
-    .replaceAll(from.feel, to.feel)
+    .replaceAll(from.feel, to.feel);
 
-    // introduced with DMNDI 1.5
-    .replace(/\s+useAlternativeInputDataShape="[^"]*"/g, '');
+  // introduced with DMNDI 1.5
+  if (compareVersions(version, '1.5') < 0) {
+    xml = xml.replace(/\s+useAlternativeInputDataShape="[^"]*"/g, '');
+  }
+
+  return xml;
 }
 
 function compareVersions(a, b) {

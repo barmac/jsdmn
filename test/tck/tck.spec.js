@@ -19,6 +19,7 @@
  *                  (default: 1.5,1.4,1.3)
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
@@ -37,6 +38,11 @@ const RESULTS_DIR = resolve(ROOT, process.env.TCK_RESULTS || 'tmp/tck-results');
 
 const LEVELS = (process.env.TCK_LEVELS || 'compliance-level-2,compliance-level-3').split(',');
 const FILTER = process.env.TCK_FILTER || null;
+
+/**
+ * Revision of the TCK checkout, the TCK evolves over time.
+ */
+const TCK_REVISION = getRevision(TCK_DIR);
 
 const VERSIONS = (process.env.TCK_DMN_VERSIONS || [ ...DMN_VERSIONS ].reverse().join(',')).split(',');
 
@@ -326,6 +332,14 @@ function runTestCase(engine, model, testCase) {
 
 // helpers ///////////////
 
+function getRevision(dir) {
+  try {
+    return execFileSync('git', [ 'rev-parse', 'HEAD' ], { cwd: dir, encoding: 'utf8', stdio: [ 'ignore', 'pipe', 'ignore' ] }).trim();
+  } catch {
+    return null;
+  }
+}
+
 function findUnparsable(value) {
 
   if (value instanceof UnparsableValue) {
@@ -387,12 +401,13 @@ function writeResults(version, results) {
     ignored: counts.IGNORED || 0
   };
 
-  writeFileSync(resolve(RESULTS_DIR, `summary${ suffix }.json`), JSON.stringify({ version, ...summary }, null, 2) + '\n', 'utf8');
+  writeFileSync(resolve(RESULTS_DIR, `summary${ suffix }.json`), JSON.stringify({ version, tckRevision: TCK_REVISION, ...summary }, null, 2) + '\n', 'utf8');
 
   console.log(
     `\nDMN TCK as DMN ${ version }: ${ summary.success } / ${ summary.total } test cases passed` +
     `${ summary.error ? `, ${ summary.error } failed` : '' }` +
     `${ summary.ignored ? `, ${ summary.ignored } skipped (known failures or elements not defined in DMN ${ version })` : '' }` +
+    ` (TCK @ ${ TCK_REVISION ? TCK_REVISION.slice(0, 7) : 'unknown revision' })` +
     ` (results in ${ RESULTS_DIR })\n`
   );
 }

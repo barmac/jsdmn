@@ -18,7 +18,7 @@ ___Note:__ Yet to be released changes appear here._
 * `FEAT`: add FEEL interpreter implementing DMN 1.5 semantics
 * `FEAT`: report evaluation messages via `Engine#evaluate`, with errors explaining `null` results
 * `FEAT`: add `Engine#evaluateDecisionService` and `Engine#evaluateBusinessKnowledgeModel`
-* `TEST`: run DMN TCK via `npm run tck`, as DMN 1.3, 1.4 and 1.5
+* `TEST`: run DMN TCK via `npm run tck`, as DMN 1.3, 1.4 and 1.5, against the TCK's latest revision
 * `DEPS`: update to `feelin@8` and `dmn-moddle@12`
 * `DEPS`: add `temporal-polyfill`
 * `CHORE`: require Node.js >= 22

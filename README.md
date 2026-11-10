@@ -113,17 +113,19 @@ await engine.evaluateDecision('Decision', inputs, { namespace: 'https://example.
 
 ## DMN TCK
 
-The engine is tested against the compliance level 2 and 3 test cases of the [DMN TCK](https://github.com/dmn-tck/tck), pinned to a specific revision in [`tasks/fetch-tck.js`](./tasks/fetch-tck.js).
+The engine is tested against the compliance level 2 and 3 test cases of the [DMN TCK](https://github.com/dmn-tck/tck).
 
 ```sh
-# fetch the DMN TCK into tmp/dmn-tck
+# fetch (or update) the DMN TCK into tmp/dmn-tck
 npm run tck:fetch
 
-# run the DMN TCK test cases
+# run the DMN TCK test cases, fetching / updating the TCK first
 npm run tck
 ```
 
-The TCK models are DMN 1.5 models. Besides running them as authored, the runner re-expresses them as DMN 1.4 and DMN 1.3 models (rewriting model, DMNDI and FEEL namespaces) and runs them again:
+The TCK evolves over time, so its latest revision (`master`) is used by default: an existing checkout is updated whenever the TCK moved on, and reused as-is if the TCK cannot be reached. Set `TCK_REF` to test against a specific branch, tag or commit; the `DMNv1.3` and `DMNv1.4` tags hold the TCK as published for DMN 1.3 (138 models) and DMN 1.4 (155 models). Earlier revisions encode earlier expectations: against both tags, 5 test cases fail that the TCK has since revised (equality of `(< 10)` and `(null..10)`, and per-import bindings of the same input data, superseded by [DMN16-50](https://issues.omg.org/browse/DMN16-50)). CI caches the TCK by the commit it resolves to and additionally runs weekly to catch up with TCK changes; each run records the TCK revision it used in `tmp/tck-results/summary.json`.
+
+The TCK models are DMN 1.5 models. Besides running them as authored, the runner re-expresses them as DMN 1.4 and DMN 1.3 models (rewriting model, DMNDI and FEEL namespaces) and runs them again. Results as of TCK revision [`5cd912f`](https://github.com/dmn-tck/tck/commit/5cd912f281831bc535e710aba435e16de198028a) (2026-11-04):
 
 | Version | Passed | Skipped |
 | ------- | ------ | ------- |
@@ -138,6 +140,7 @@ Results are written to `tmp/tck-results/tck_results.csv` (DMN 1.5) and `tck_resu
 The test run can be customized via environment variables:
 
 * `TCK_DIR` - location of the TCK checkout (default: `tmp/dmn-tck`)
+* `TCK_REF` - TCK branch, tag or commit to fetch (default: `master`)
 * `TCK_FILTER` - only run test case folders containing the given string, e.g. `TCK_FILTER=0085 npm run tck`
 * `TCK_LEVELS` - comma separated test case folders to run (default: `compliance-level-2,compliance-level-3`, add `non-compliant` to run the TCK's non-compliant tests)
 * `TCK_DMN_VERSIONS` - comma separated DMN versions to run the TCK as (default: `1.5,1.4,1.3`)
