@@ -3,6 +3,11 @@
  *
  * Fetch the TCK via `npm run tck:fetch`, then execute `npm run tck`.
  *
+ * The TCK models are DMN 1.5 models. Besides running them as authored, the
+ * runner re-expresses them in DMN 1.4 and DMN 1.3 (rewriting namespaces) and
+ * runs them again; models using elements a version does not define are
+ * skipped for that version.
+ *
  * Environment:
  *
  *   TCK_DIR      - TCK checkout (default: tmp/dmn-tck)
@@ -12,6 +17,8 @@
  *   TCK_RESULTS  - directory to write tck_results.csv to (default: tmp/tck-results)
  *   TCK_STRICT_ERRORS - additionally require that the engine reports an error
  *                  for result nodes marked with `errorResult="true"`
+ *   TCK_DMN_VERSIONS - comma separated DMN versions to run the TCK as
+ *                  (default: 1.5,1.4,1.3)
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -22,6 +29,7 @@ import { Engine } from '../../src/engine.js';
 import { compare } from './compare.js';
 import { parseTestSuite, UnparsableValue } from './test-cases.js';
 import { getKnownFailure } from './known-failures.js';
+import { TCK_DMN_VERSION, DMN_VERSIONS, convertModel, getUnsupportedElements } from './versions.js';
 
 const ROOT = resolve(new URL('../..', import.meta.url).pathname);
 
@@ -33,10 +41,13 @@ const LEVELS = (process.env.TCK_LEVELS || 'compliance-level-2,compliance-level-3
 const FILTER = process.env.TCK_FILTER || null;
 const STRICT_ERRORS = !!process.env.TCK_STRICT_ERRORS;
 
-/**
- * @type { Array<{ folder: string, file: string, id: string, status: string, comment: string }> }
- */
-const results = [];
+const VERSIONS = (process.env.TCK_DMN_VERSIONS || [ ...DMN_VERSIONS ].reverse().join(',')).split(',');
+
+for (const version of VERSIONS) {
+  if (!DMN_VERSIONS.includes(version)) {
+    throw new Error(`unsupported TCK_DMN_VERSIONS entry <${ version }>, expected one of ${ DMN_VERSIONS.join(', ') }`);
+  }
+}
 
 
 describe('DMN TCK', function() {
@@ -50,39 +61,58 @@ describe('DMN TCK', function() {
     return;
   }
 
-  after(function() {
-    writeResults(results);
-  });
+  for (const version of VERSIONS) {
 
-  for (const level of LEVELS) {
+    describe(`DMN ${ version }`, function() {
 
-    const levelDir = resolve(TEST_CASES_DIR, level);
+      /**
+       * @type { Array<{ folder: string, file: string, id: string, status: string, comment: string }> }
+       */
+      const results = [];
 
-    if (!existsSync(levelDir)) {
-      continue;
-    }
+      after(function() {
+        writeResults(version, results);
+      });
 
-    describe(level, function() {
+      for (const level of LEVELS) {
 
-      for (const folder of listDirectories(levelDir)) {
+        const levelDir = resolve(TEST_CASES_DIR, level);
 
-        if (FILTER && !folder.includes(FILTER)) {
+        if (!existsSync(levelDir)) {
           continue;
         }
 
-        describeTestFolder(level, folder, resolve(levelDir, folder));
+        describe(level, function() {
+
+          for (const folder of listDirectories(levelDir)) {
+
+            if (FILTER && !folder.includes(FILTER)) {
+              continue;
+            }
+
+            describeTestFolder(version, results, level, folder, resolve(levelDir, folder));
+          }
+        });
       }
     });
   }
 });
 
 
-function describeTestFolder(level, folder, dir) {
+function describeTestFolder(version, results, level, folder, dir) {
 
   const files = readdirSync(dir).sort();
 
   const modelFiles = files.filter(file => file.endsWith('.dmn'));
   const testFiles = files.filter(file => /-test-\d+\.xml$/.test(file));
+
+  const modelXml = Object.fromEntries(modelFiles.map(file => [ file, readFileSync(resolve(dir, file), 'utf8') ]));
+
+  const unsupported = [ ...new Set(Object.values(modelXml).flatMap(xml => getUnsupportedElements(xml, version))) ];
+
+  const notApplicable = unsupported.length
+    ? `uses ${ unsupported.map(element => `<${ element }>`).join(', ') }, not defined in DMN ${ version }`
+    : null;
 
   describe(folder, function() {
 
@@ -92,16 +122,46 @@ function describeTestFolder(level, folder, dir) {
     let loadError;
 
     before(async function() {
+
+      if (notApplicable) {
+        return;
+      }
+
       engine = new Engine();
 
       try {
         for (const file of modelFiles) {
-          models[file] = await engine.load(readFileSync(resolve(dir, file), 'utf8'));
+          models[file] = await engine.load(convertModel(modelXml[file], version));
         }
       } catch (error) {
         loadError = error;
       }
     });
+
+    if (notApplicable) {
+
+      it(`should reject models using elements not defined in DMN ${ version }`, async function() {
+
+        for (const [ file, xml ] of Object.entries(modelXml)) {
+
+          if (!getUnsupportedElements(xml, version).length) {
+            continue;
+          }
+
+          let error;
+
+          try {
+            await new Engine().load(convertModel(xml, version));
+          } catch (e) {
+            error = e;
+          }
+
+          if (!error) {
+            throw new Error(`expected <${ file }> to be rejected as DMN ${ version }`);
+          }
+        }
+      });
+    }
 
     for (const testFile of testFiles) {
 
@@ -128,6 +188,13 @@ function describeTestFolder(level, folder, dir) {
             };
 
             results.push(record);
+
+            if (notApplicable) {
+              record.status = 'IGNORED';
+              record.comment = notApplicable;
+
+              this.skip();
+            }
 
             try {
 
@@ -285,7 +352,7 @@ function truncate(str, length = 80) {
   return str.length > length ? `${ str.slice(0, length - 3) }...` : str;
 }
 
-function writeResults(results) {
+function writeResults(version, results) {
 
   if (!results.length) {
     return;
@@ -293,11 +360,14 @@ function writeResults(results) {
 
   mkdirSync(RESULTS_DIR, { recursive: true });
 
+  // results of the models as authored use the name of the official TCK results
+  const suffix = version === TCK_DMN_VERSION ? '' : `-dmn${ version.replace('.', '') }`;
+
   const csv = results.map(({ folder, file, id, status, comment }) => {
     return [ folder, file, id, status, comment ].map(value => `"${ String(value).replace(/"/g, '\'') }"`).join(',');
   }).join('\n');
 
-  writeFileSync(resolve(RESULTS_DIR, 'tck_results.csv'), csv + '\n', 'utf8');
+  writeFileSync(resolve(RESULTS_DIR, `tck_results${ suffix }.csv`), csv + '\n', 'utf8');
 
   const counts = results.reduce((counts, { status }) => {
     counts[status] = (counts[status] || 0) + 1;
@@ -312,12 +382,12 @@ function writeResults(results) {
     ignored: counts.IGNORED || 0
   };
 
-  writeFileSync(resolve(RESULTS_DIR, 'summary.json'), JSON.stringify(summary, null, 2) + '\n', 'utf8');
+  writeFileSync(resolve(RESULTS_DIR, `summary${ suffix }.json`), JSON.stringify({ version, ...summary }, null, 2) + '\n', 'utf8');
 
   console.log(
-    `\nDMN TCK: ${ summary.success } / ${ summary.total } test cases passed` +
+    `\nDMN TCK as DMN ${ version }: ${ summary.success } / ${ summary.total } test cases passed` +
     `${ summary.error ? `, ${ summary.error } failed` : '' }` +
-    `${ summary.ignored ? `, ${ summary.ignored } known failures` : '' }` +
+    `${ summary.ignored ? `, ${ summary.ignored } skipped (known failures or elements not defined in DMN ${ version })` : '' }` +
     ` (results in ${ RESULTS_DIR })\n`
   );
 }
