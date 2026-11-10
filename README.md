@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/barmac/jsdmn/workflows/CI/badge.svg)](https://github.com/barmac/jsdmn/actions?query=workflow%3ACI)
 
-Evaluate DMN decisions both in NodeJS and in browser.
+Evaluate DMN 1.3, 1.4 and 1.5 decisions both in NodeJS and in browser.
 
 `jsdmn` passes all __3407__ test cases of compliance level 2 and 3 of [the DMN TCK](https://github.com/dmn-tck/tck), see [DMN TCK](#dmn-tck).
 
@@ -60,6 +60,20 @@ const { value, messages } = await engine.evaluate('decision', 'Decision', inputs
 // messages: [ { severity: 'error', message: '...', elementId, elementName } ]
 ```
 
+### DMN versions
+
+DMN 1.3, 1.4 and 1.5 models are supported. The version is detected from the model's namespace and exposed by the loaded model:
+
+```javascript
+const model = await engine.load(dmnXML);
+
+console.log(model.version); // '1.5'
+```
+
+Each version is parsed strictly, with its own schema: elements a version does not define, e.g. a boxed `<conditional>` (DMN 1.4) in a DMN 1.3 model, are rejected. Diagram interchange (DMNDI) of any of these versions is accepted. DMN 1.1 and 1.2 models are read as DMN 1.3.
+
+Expressions are evaluated with DMN 1.5 semantics regardless of the model's version, i.e. builtin functions introduced by later versions are available in models of earlier versions, too.
+
 ### Imports
 
 Models may import each other and can be loaded in any order. Pass `namespace` to choose among elements of the same name in different models:
@@ -73,7 +87,7 @@ await engine.evaluateDecision('Decision', inputs, { namespace: 'https://example.
 
 ## Features
 
-* DMN 1.1 - 1.5 models
+* DMN 1.3, 1.4 and 1.5 models (DMN 1.1 and 1.2 are read as DMN 1.3), see [DMN versions](#dmn-versions)
 * Decisions, input data, business knowledge models, decision services (invoked directly or as functions), DRG scoping
 * Imports of DMN models (named and unnamed)
 * Boxed expressions: literal expressions, contexts, decision tables (all hit policies and aggregations, input / output values, default outputs), invocations, function definitions (FEEL and Java), lists, relations, conditionals, filters, iterators (`for`, `some`, `every`)
@@ -100,7 +114,17 @@ npm run tck:fetch
 npm run tck
 ```
 
-Results are written to `tmp/tck-results/tck_results.csv`, in the format used by the [TCK results](https://github.com/dmn-tck/tck/tree/master/TestResults).
+The TCK models are DMN 1.5 models. Besides running them as authored, the runner re-expresses them as DMN 1.4 and DMN 1.3 models (rewriting model, DMNDI and FEEL namespaces) and runs them again:
+
+| Version | Passed | Skipped |
+| ------- | ------ | ------- |
+| DMN 1.5 | 3407 / 3407 | - |
+| DMN 1.4 | 3407 / 3407 | - |
+| DMN 1.3 | 3388 / 3407 | 19, using boxed `conditional`, `filter`, `for`, `some` and `every` (introduced with DMN 1.4) |
+
+For skipped folders, the runner asserts that their models are rejected when read as the respective version.
+
+Results are written to `tmp/tck-results/tck_results.csv` (DMN 1.5) and `tck_results-dmn14.csv` / `tck_results-dmn13.csv`, in the format used by the [TCK results](https://github.com/dmn-tck/tck/tree/master/TestResults).
 
 The test run can be customized via environment variables:
 
@@ -108,6 +132,7 @@ The test run can be customized via environment variables:
 * `TCK_FILTER` - only run test case folders containing the given string, e.g. `TCK_FILTER=0085 npm run tck`
 * `TCK_LEVELS` - comma separated test case folders to run (default: `compliance-level-2,compliance-level-3`, add `non-compliant` to run the TCK's non-compliant tests)
 * `TCK_STRICT_ERRORS` - additionally require the engine to report an error for results expected to be errors (`errorResult="true"`)
+* `TCK_DMN_VERSIONS` - comma separated DMN versions to run the TCK as (default: `1.5,1.4,1.3`)
 
 Numbers are compared with a relative tolerance of `1e-12`; expected values given with 7 or more fraction digits (e.g. results of `exp(4)`) are compared at that precision. Known failures can be registered in [`test/tck/known-failures.js`](./test/tck/known-failures.js); there are none.
 
