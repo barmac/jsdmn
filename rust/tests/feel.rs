@@ -40,6 +40,23 @@ fn lists_and_iteration() {
 }
 
 #[test]
+fn closures_capture_loop_variables() {
+    // loop scopes are reused only when nothing captured them
+    assert_eq!(
+        eval("for f in (for i in 1..3 return function() i) return f()"),
+        "[1, 2, 3]"
+    );
+    assert_eq!(
+        eval("for f in [1, 2, 3][item > 0] return (function(x) x + item)(f)"),
+        "[null, null, null]"
+    );
+    assert_eq!(
+        eval("every x in [1, 2] satisfies (function() x)() = x"),
+        "true"
+    );
+}
+
+#[test]
 fn temporal() {
     assert_eq!(
         eval("date(\"2021-01-31\") + duration(\"P1M\")"),

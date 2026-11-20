@@ -254,7 +254,38 @@ pub fn conforms_type(a: &DmnType, b: &DmnType) -> bool {
 
 /// Coerce a value to a declared type; returns `Null` if it does not conform.
 pub fn coerce(v: &Value, t: &DmnType) -> Value {
+    // most values already conform: avoid rebuilding lists and contexts
+    if conforms_exactly(v, t) {
+        return v.clone();
+    }
     coerce_inner(v, t, true)
+}
+
+/// Does `v` conform to `t` without any conversion (so that coercion is the identity)?
+fn conforms_exactly(v: &Value, t: &DmnType) -> bool {
+    if v.is_null() {
+        return true;
+    }
+    match t {
+        DmnType::Any | DmnType::Unknown(_) => true,
+        DmnType::Null => false,
+        DmnType::Named(n) => {
+            let base = n.base.borrow().clone();
+            conforms_exactly(v, &base) && check_constraints(v, n)
+        }
+        DmnType::List(et) => match v {
+            Value::List(items) => items.iter().all(|i| conforms_exactly(i, et)),
+            _ => false,
+        },
+        DmnType::Context(entries) => match v {
+            Value::Context(c) => entries.iter().all(|(k, et)| match c.get(k) {
+                Some(x) => conforms_exactly(x, et),
+                None => false,
+            }),
+            _ => false,
+        },
+        _ => is_instance(v, t),
+    }
 }
 
 fn coerce_inner(v: &Value, t: &DmnType, unwrap: bool) -> Value {

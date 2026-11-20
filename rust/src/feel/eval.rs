@@ -59,6 +59,34 @@ impl Scope {
         })
     }
 
+    /// Single-variable child scope, reusing the scope in `slot` when nothing
+    /// else (e.g. a closure) holds on to it.
+    pub fn reuse_one(
+        slot: &mut Option<Rc<Scope>>,
+        parent: &Rc<Scope>,
+        name: &Rc<str>,
+        v: Value,
+    ) -> Rc<Scope> {
+        if let Some(mut s) = slot.take()
+            && let Some(m) = Rc::get_mut(&mut s)
+        {
+            m.frame = Frame::One(name.clone(), v);
+            return s;
+        }
+        Scope::with_rc(parent, name.clone(), v)
+    }
+
+    /// Filter item scope, reusing the scope in `slot` when possible.
+    pub fn reuse_item(slot: &mut Option<Rc<Scope>>, parent: &Rc<Scope>, item: Value) -> Rc<Scope> {
+        if let Some(mut s) = slot.take()
+            && let Some(m) = Rc::get_mut(&mut s)
+        {
+            m.frame = Frame::Item(item);
+            return s;
+        }
+        Scope::item(parent, item)
+    }
+
     /// Child scope binding `?`.
     pub fn with_qmark(parent: &Rc<Scope>, v: Value) -> Rc<Scope> {
         Scope::with_rc(parent, QMARK.with(|q| q.clone()), v)
@@ -352,13 +380,15 @@ fn eval_strict(e: &Expr, scope: &Rc<Scope>) -> Value {
                 _ => return Value::Null,
             };
             let mut out = Vec::new();
+            let mut slot = None;
             for item in items.iter() {
-                let s = item_scope(scope, item);
+                let s = Scope::reuse_item(&mut slot, scope, item.clone());
                 match eval(f, &s) {
                     Value::Bool(true) => out.push(item.clone()),
                     Value::Bool(false) | Value::Null => {}
                     _ => return Value::Null,
                 }
+                slot = Some(s);
             }
             Value::list(out)
         }
@@ -404,9 +434,11 @@ fn eval_quantified_strict(
         }
         let (name, e) = &iters[i];
         if let Value::List(l) = eval(e, scope) {
+            let mut slot = None;
             for v in l.iter() {
-                let s = Scope::with_rc(scope, name.clone(), v.clone());
+                let s = Scope::reuse_one(&mut slot, scope, name, v.clone());
                 rec(i + 1, iters, cond, &s, results);
+                slot = Some(s);
             }
         }
     }
@@ -596,11 +628,13 @@ fn eval_for(iters: &[(Rc<str>, Iteration)], body: &Expr, scope: &Rc<Scope>) -> V
             Some(v) => v,
             None => return false,
         };
+        let mut slot = None;
         for v in values {
-            let s = Scope::with_rc(scope, name.clone(), v);
+            let s = Scope::reuse_one(&mut slot, scope, name, v);
             if !rec(i + 1, iters, body, &s, results, partial) {
                 return false;
             }
+            slot = Some(s);
         }
         true
     }
@@ -633,11 +667,13 @@ fn eval_quantified(
             Some(v) => v,
             None => return false,
         };
+        let mut slot = None;
         for v in values {
-            let s = Scope::with_rc(scope, name.clone(), v);
+            let s = Scope::reuse_one(&mut slot, scope, name, v);
             if !rec(i + 1, iters, cond, &s, results) {
                 return false;
             }
+            slot = Some(s);
         }
         true
     }
@@ -690,10 +726,6 @@ fn index_list(items: &[Value], n: &Number) -> Value {
     items[idx as usize].clone()
 }
 
-fn item_scope(scope: &Rc<Scope>, item: &Value) -> Rc<Scope> {
-    Scope::item(scope, item.clone())
-}
-
 fn eval_filter(base: &Expr, f: &Expr, scope: &Rc<Scope>) -> Value {
     let b = eval(base, scope);
     let items: Vec<Value> = match &b {
@@ -709,14 +741,16 @@ fn eval_filter(base: &Expr, f: &Expr, scope: &Rc<Scope>) -> Value {
         }
     }
     let mut out = Vec::new();
+    let mut slot = None;
     for (i, item) in items.iter().enumerate() {
-        let s = item_scope(scope, item);
+        let s = Scope::reuse_item(&mut slot, scope, item.clone());
         let r = eval(f, &s);
         match r {
             Value::Bool(true) => out.push(item.clone()),
             Value::Number(n) if i == 0 => return index_list(&items, &n),
             _ => {}
         }
+        slot = Some(s);
     }
     Value::list(out)
 }
