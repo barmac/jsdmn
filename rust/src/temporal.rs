@@ -57,21 +57,17 @@ pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Zone {
     /// Fixed offset in seconds east of UTC.
     Offset(i32),
     /// IANA zone id.
-    Id(String),
+    Id(chrono_tz::Tz),
 }
 
 impl Zone {
     pub fn parse_id(name: &str) -> Option<Zone> {
-        if chrono_tz::Tz::from_str(name).is_ok() {
-            Some(Zone::Id(name.to_string()))
-        } else {
-            None
-        }
+        chrono_tz::Tz::from_str(name).ok().map(Zone::Id)
     }
 }
 
@@ -97,9 +93,8 @@ fn naive(local_days: i64, secs_of_day: i64) -> Option<chrono::NaiveDateTime> {
 }
 
 /// Offset (seconds) of the given zone for a local date time.
-pub fn zone_offset_for_local(zone: &str, local_days: i64, secs_of_day: i64) -> Option<i32> {
+pub fn zone_offset_for_local(tz: chrono_tz::Tz, local_days: i64, secs_of_day: i64) -> Option<i32> {
     use chrono::{Offset, TimeZone};
-    let tz = chrono_tz::Tz::from_str(zone).ok()?;
     let nd = naive(local_days, secs_of_day)?;
     match tz.offset_from_local_datetime(&nd) {
         chrono::LocalResult::Single(o) => Some(o.fix().local_minus_utc()),
@@ -117,18 +112,17 @@ pub fn zone_offset_for_local(zone: &str, local_days: i64, secs_of_day: i64) -> O
 }
 
 /// Offset (seconds) of the given zone at an UTC instant.
-pub fn zone_offset_for_instant(zone: &str, utc_days: i64, secs_of_day: i64) -> Option<i32> {
+pub fn zone_offset_for_instant(tz: chrono_tz::Tz, utc_days: i64, secs_of_day: i64) -> Option<i32> {
     use chrono::{Offset, TimeZone};
-    let tz = chrono_tz::Tz::from_str(zone).ok()?;
     let nd = naive(utc_days, secs_of_day)?;
     Some(tz.offset_from_utc_datetime(&nd).fix().local_minus_utc())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Date {
-    pub year: i64,
-    pub month: u32,
-    pub day: u32,
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
 }
 
 impl Date {
@@ -139,7 +133,11 @@ impl Date {
         if year.abs() > MAX_YEAR {
             return None;
         }
-        Some(Date { year, month, day })
+        Some(Date {
+            year: year as i32,
+            month: month as u8,
+            day: day as u8,
+        })
     }
 
     pub fn from_days(days: i64) -> Option<Date> {
@@ -148,7 +146,7 @@ impl Date {
     }
 
     pub fn days(&self) -> i64 {
-        days_from_civil(self.year, self.month, self.day)
+        days_from_civil(self.year as i64, self.month as u32, self.day as u32)
     }
 
     /// ISO weekday, Monday = 1.
@@ -158,7 +156,7 @@ impl Date {
     }
 
     pub fn day_of_year(&self) -> u32 {
-        (self.days() - days_from_civil(self.year, 1, 1) + 1) as u32
+        (self.days() - days_from_civil(self.year as i64, 1, 1) + 1) as u32
     }
 
     /// ISO 8601 week of year.
@@ -167,8 +165,8 @@ impl Date {
         let wd = self.weekday() as i64;
         let w = (doy - wd + 10) / 7;
         if w < 1 {
-            weeks_in_year(self.year - 1)
-        } else if w > weeks_in_year(self.year) as i64 {
+            weeks_in_year(self.year as i64 - 1)
+        } else if w > weeks_in_year(self.year as i64) as i64 {
             1
         } else {
             w as u32
@@ -176,10 +174,10 @@ impl Date {
     }
 
     pub fn add_months(&self, months: i64) -> Option<Date> {
-        let total = self.year * 12 + (self.month as i64 - 1) + months;
+        let total = self.year as i64 * 12 + (self.month as i64 - 1) + months;
         let y = total.div_euclid(12);
         let m = (total.rem_euclid(12) + 1) as u32;
-        let d = self.day.min(days_in_month(y, m));
+        let d = (self.day as u32).min(days_in_month(y, m));
         Date::new(y, m, d)
     }
 
@@ -226,16 +224,16 @@ fn fmt_year(f: &mut fmt::Formatter<'_>, y: i64) -> fmt::Result {
 
 impl fmt::Display for Date {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_year(f, self.year)?;
+        fmt_year(f, self.year as i64)?;
         write!(f, "-{:02}-{:02}", self.month, self.day)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Time {
-    pub hour: u32,
-    pub minute: u32,
-    pub second: u32,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
     pub nanos: u32,
     pub zone: Option<Zone>,
 }
@@ -286,16 +284,17 @@ impl Time {
             return None;
         }
         Some(Time {
-            hour,
-            minute,
-            second,
+            hour: hour as u8,
+            minute: minute as u8,
+            second: second as u8,
             nanos,
             zone,
         })
     }
 
+    #[inline]
     pub fn secs_of_day(&self) -> i64 {
-        (self.hour * 3600 + self.minute * 60 + self.second) as i64
+        self.hour as i64 * 3600 + self.minute as i64 * 60 + self.second as i64
     }
 
     pub fn nanos_of_day(&self) -> i128 {
@@ -307,9 +306,9 @@ impl Time {
         let secs = (n / NANOS_PER_SEC) as u32;
         let nanos = (n % NANOS_PER_SEC) as u32;
         Time {
-            hour: secs / 3600,
-            minute: (secs / 60) % 60,
-            second: secs % 60,
+            hour: (secs / 3600) as u8,
+            minute: ((secs / 60) % 60) as u8,
+            second: (secs % 60) as u8,
             nanos,
             zone,
         }
@@ -407,7 +406,7 @@ fn fmt_zone(f: &mut fmt::Formatter<'_>, zone: &Option<Zone>) -> fmt::Result {
     match zone {
         None => Ok(()),
         Some(Zone::Offset(o)) => f.write_str(&fmt_offset(*o)),
-        Some(Zone::Id(id)) => write!(f, "@{}", id),
+        Some(Zone::Id(tz)) => write!(f, "@{}", tz.name()),
     }
 }
 
@@ -419,7 +418,7 @@ impl fmt::Display for Time {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DateTime {
     pub date: Date,
     pub time: Time,
@@ -475,8 +474,8 @@ impl DateTime {
         match &self.time.zone {
             None => None,
             Some(Zone::Offset(o)) => Some(*o),
-            Some(Zone::Id(id)) => {
-                zone_offset_for_local(id, self.date.days(), self.time.secs_of_day())
+            Some(Zone::Id(tz)) => {
+                zone_offset_for_local(*tz, self.date.days(), self.time.secs_of_day())
             }
         }
     }
@@ -495,10 +494,10 @@ impl DateTime {
     pub fn from_instant(instant: i128, zone: Zone) -> Option<DateTime> {
         let offset = match &zone {
             Zone::Offset(o) => *o,
-            Zone::Id(id) => {
+            Zone::Id(tz) => {
                 let days = instant.div_euclid(NANOS_PER_DAY);
                 let secs = instant.rem_euclid(NANOS_PER_DAY) / NANOS_PER_SEC;
-                zone_offset_for_instant(id, i64::try_from(days).ok()?, secs as i64)?
+                zone_offset_for_instant(*tz, i64::try_from(days).ok()?, secs as i64)?
             }
         };
         DateTime::from_local_nanos(instant + offset as i128 * NANOS_PER_SEC, Some(zone))
@@ -509,9 +508,9 @@ impl DateTime {
         match &self.time.zone {
             Some(Zone::Id(_)) => {
                 let i = self.instant()?;
-                DateTime::from_instant(i + d, self.time.zone.clone().unwrap())
+                DateTime::from_instant(i + d, self.time.zone.unwrap())
             }
-            _ => DateTime::from_local_nanos(self.local_nanos() + d, self.time.zone.clone()),
+            _ => DateTime::from_local_nanos(self.local_nanos() + d, self.time.zone),
         }
     }
 
@@ -519,7 +518,7 @@ impl DateTime {
         let date = self.date.add_months(months)?;
         Some(DateTime {
             date,
-            time: self.time.clone(),
+            time: self.time,
         })
     }
 }

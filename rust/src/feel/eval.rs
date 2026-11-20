@@ -12,49 +12,119 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 
+enum Frame {
+    /// Mutable set of variables.
+    Vars(RefCell<Vec<(Rc<str>, Value)>>),
+    /// A single variable (iteration variables, `?`, `partial`).
+    One(Rc<str>, Value),
+    /// A filter item: the entries of a context item shadow `item`.
+    Item(Value),
+}
+
 /// Lexical scope (linked list of frames).
 pub struct Scope {
-    vars: RefCell<Vec<(Rc<str>, Value)>>,
+    frame: Frame,
     parent: Option<Rc<Scope>>,
+}
+
+thread_local! {
+    static QMARK: Rc<str> = Rc::from("?");
+    static PARTIAL: Rc<str> = Rc::from("partial");
 }
 
 impl Scope {
     pub fn root() -> Rc<Scope> {
         Rc::new(Scope {
-            vars: RefCell::new(Vec::new()),
+            frame: Frame::Vars(RefCell::new(Vec::new())),
             parent: None,
         })
     }
 
     pub fn child(parent: &Rc<Scope>) -> Rc<Scope> {
         Rc::new(Scope {
-            vars: RefCell::new(Vec::new()),
+            frame: Frame::Vars(RefCell::new(Vec::new())),
             parent: Some(parent.clone()),
         })
     }
 
+    /// Child scope binding a single name.
     pub fn with(parent: &Rc<Scope>, name: &str, v: Value) -> Rc<Scope> {
-        let s = Scope::child(parent);
-        s.set(name, v);
-        s
+        Scope::with_rc(parent, Rc::from(name), v)
     }
 
+    pub fn with_rc(parent: &Rc<Scope>, name: Rc<str>, v: Value) -> Rc<Scope> {
+        Rc::new(Scope {
+            frame: Frame::One(name, v),
+            parent: Some(parent.clone()),
+        })
+    }
+
+    /// Child scope binding `?`.
+    pub fn with_qmark(parent: &Rc<Scope>, v: Value) -> Rc<Scope> {
+        Scope::with_rc(parent, QMARK.with(|q| q.clone()), v)
+    }
+
+    /// Child scope binding `partial`.
+    pub fn with_partial(parent: &Rc<Scope>, v: Value) -> Rc<Scope> {
+        Scope::with_rc(parent, PARTIAL.with(|q| q.clone()), v)
+    }
+
+    /// Child scope for a filter item.
+    pub fn item(parent: &Rc<Scope>, item: Value) -> Rc<Scope> {
+        Rc::new(Scope {
+            frame: Frame::Item(item),
+            parent: Some(parent.clone()),
+        })
+    }
+
+    /// Define (or redefine) a variable; only valid on scopes created by `root` / `child`.
     pub fn set(&self, name: &str, v: Value) {
-        let mut vars = self.vars.borrow_mut();
-        if let Some(e) = vars.iter_mut().find(|(k, _)| &**k == name) {
-            e.1 = v;
-        } else {
-            vars.push((Rc::from(name), v));
+        match &self.frame {
+            Frame::Vars(vars) => {
+                let mut vars = vars.borrow_mut();
+                if let Some(e) = vars.iter_mut().find(|(k, _)| &**k == name) {
+                    e.1 = v;
+                } else {
+                    vars.push((Rc::from(name), v));
+                }
+            }
+            _ => panic!("cannot define variables in a single-variable scope"),
+        }
+    }
+
+    /// Remove all variables (used to break reference cycles).
+    pub fn clear(&self) {
+        if let Frame::Vars(vars) = &self.frame {
+            vars.borrow_mut().clear();
         }
     }
 
     pub fn lookup(&self, name: &str) -> Option<Value> {
-        if let Some((_, v)) = self.vars.borrow().iter().rev().find(|(k, _)| &**k == name) {
-            return Some(v.clone());
-        }
-        match &self.parent {
-            Some(p) => p.lookup(name),
-            None => None,
+        let mut s = self;
+        loop {
+            match &s.frame {
+                Frame::Vars(vars) => {
+                    if let Some((_, v)) = vars.borrow().iter().rev().find(|(k, _)| &**k == name) {
+                        return Some(v.clone());
+                    }
+                }
+                Frame::One(n, v) => {
+                    if &**n == name {
+                        return Some(v.clone());
+                    }
+                }
+                Frame::Item(v) => {
+                    if let Value::Context(c) = v
+                        && let Some(x) = c.get(name)
+                    {
+                        return Some(x.clone());
+                    }
+                    if name == "item" {
+                        return Some(v.clone());
+                    }
+                }
+            }
+            s = s.parent.as_ref()?;
         }
     }
 }
@@ -284,7 +354,7 @@ fn eval_quantified_strict(
         let (name, e) = &iters[i];
         if let Value::List(l) = eval(e, scope) {
             for v in l.iter() {
-                let s = Scope::with(scope, name, v.clone());
+                let s = Scope::with_rc(scope, name.clone(), v.clone());
                 rec(i + 1, iters, cond, &s, results);
             }
         }
@@ -394,8 +464,8 @@ fn iteration_values(v: Value) -> Option<Vec<Value>> {
     match v {
         Value::List(l) => Some(l.as_ref().clone()),
         Value::Range(r) => {
-            let lo = r.low()?.as_number()?.clone();
-            let hi = r.high()?.as_number()?.clone();
+            let lo = *r.low()?.as_number()?;
+            let hi = *r.high()?.as_number()?;
             let mut start = lo.to_i64()?;
             let mut end = hi.to_i64()?;
             if !r.start_incl {
@@ -444,16 +514,25 @@ fn range_values(a: Value, b: Value) -> Option<Vec<Value>> {
 
 fn eval_for(iters: &[(Rc<str>, Iteration)], body: &Expr, scope: &Rc<Scope>) -> Value {
     let mut results: Vec<Value> = Vec::new();
+    // `partial` (the results so far) is only materialized when the body uses it
+    let partial = body.uses_name("partial");
+    #[allow(clippy::too_many_arguments)]
     fn rec(
         i: usize,
         iters: &[(Rc<str>, Iteration)],
         body: &Expr,
         scope: &Rc<Scope>,
         results: &mut Vec<Value>,
+        partial: bool,
     ) -> bool {
         if i == iters.len() {
-            let s = Scope::with(scope, "partial", Value::list(results.clone()));
-            results.push(eval(body, &s));
+            let v = if partial {
+                let s = Scope::with_partial(scope, Value::list(results.clone()));
+                eval(body, &s)
+            } else {
+                eval(body, scope)
+            };
+            results.push(v);
             return true;
         }
         let (name, it) = &iters[i];
@@ -466,14 +545,14 @@ fn eval_for(iters: &[(Rc<str>, Iteration)], body: &Expr, scope: &Rc<Scope>) -> V
             None => return false,
         };
         for v in values {
-            let s = Scope::with(scope, name, v);
-            if !rec(i + 1, iters, body, &s, results) {
+            let s = Scope::with_rc(scope, name.clone(), v);
+            if !rec(i + 1, iters, body, &s, results, partial) {
                 return false;
             }
         }
         true
     }
-    if !rec(0, iters, body, scope, &mut results) {
+    if !rec(0, iters, body, scope, &mut results, partial) {
         return Value::Null;
     }
     Value::list(results)
@@ -503,7 +582,7 @@ fn eval_quantified(
             None => return false,
         };
         for v in values {
-            let s = Scope::with(scope, name, v);
+            let s = Scope::with_rc(scope, name.clone(), v);
             if !rec(i + 1, iters, cond, &s, results) {
                 return false;
             }
@@ -560,14 +639,7 @@ fn index_list(items: &[Value], n: &Number) -> Value {
 }
 
 fn item_scope(scope: &Rc<Scope>, item: &Value) -> Rc<Scope> {
-    let s = Scope::child(scope);
-    s.set("item", item.clone());
-    if let Value::Context(c) = item {
-        for (k, v) in c.entries() {
-            s.set(k, v.clone());
-        }
-    }
-    s
+    Scope::item(scope, item.clone())
 }
 
 fn eval_filter(base: &Expr, f: &Expr, scope: &Rc<Scope>) -> Value {
@@ -853,7 +925,7 @@ pub fn arith(op: ArithOp, a: &Value, b: &Value) -> Value {
                 d.add_months(x.0).map(Date).unwrap_or(Null)
             }
             (Time(t), DtDuration(x)) | (DtDuration(x), Time(t)) => Time(
-                crate::temporal::Time::from_nanos_of_day(t.nanos_of_day() + x.0, t.zone.clone()),
+                crate::temporal::Time::from_nanos_of_day(t.nanos_of_day() + x.0, t.zone),
             ),
             _ => Null,
         },
@@ -879,7 +951,7 @@ pub fn arith(op: ArithOp, a: &Value, b: &Value) -> Value {
             (Date(d), YmDuration(x)) => d.add_months(-x.0).map(Date).unwrap_or(Null),
             (Time(t), DtDuration(x)) => Time(crate::temporal::Time::from_nanos_of_day(
                 t.nanos_of_day() - x.0,
-                t.zone.clone(),
+                t.zone,
             )),
             _ => Null,
         },
@@ -948,7 +1020,7 @@ fn time_props(t: &Time, name: &str, dt: Option<&DateTime>) -> Value {
             None => Value::Null,
         },
         "timezone" => match &t.zone {
-            Some(Zone::Id(id)) => Value::str(id),
+            Some(Zone::Id(id)) => Value::str(id.name()),
             _ => Value::Null,
         },
         _ => Value::Null,
@@ -957,7 +1029,7 @@ fn time_props(t: &Time, name: &str, dt: Option<&DateTime>) -> Value {
 
 fn date_props(d: &Date, name: &str) -> Option<Value> {
     Some(match name {
-        "year" => Value::int(d.year),
+        "year" => Value::int(d.year as i64),
         "month" => Value::int(d.month as i64),
         "day" => Value::int(d.day as i64),
         "weekday" => Value::int(d.weekday() as i64),
@@ -1010,11 +1082,17 @@ pub fn path(b: &Value, name: &str) -> Value {
 
 /// Evaluate unary tests against an input value; returns Bool or Null.
 pub fn eval_unary_tests(ut: &UnaryTests, x: &Value, scope: &Rc<Scope>) -> Value {
-    let s = Scope::with(scope, "?", x.clone());
+    let qs;
+    let s = if ut.qmark {
+        qs = Scope::with_qmark(scope, x.clone());
+        &qs
+    } else {
+        scope
+    };
     let mut any_null = false;
     let mut matched = false;
     for t in &ut.tests {
-        match test_one(t, x, &s) {
+        match test_one(t, x, s) {
             Some(true) => {
                 matched = true;
                 break;

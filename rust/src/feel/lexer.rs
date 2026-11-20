@@ -313,8 +313,47 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
     Ok(toks)
 }
 
+/// Is `s` already normalized (ASCII, single inner spaces, no other whitespace)?
+fn is_normalized(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.is_empty() || b[0] == b' ' || b[b.len() - 1] == b' ' {
+        return b.is_empty();
+    }
+    let mut prev_space = false;
+    for &c in b {
+        if c >= 0x80 || matches!(c, b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) {
+            return false;
+        }
+        let space = c == b' ';
+        if space && prev_space {
+            return false;
+        }
+        prev_space = space;
+    }
+    true
+}
+
+/// Leading word of a name as the lexer would tokenize it.
+pub fn first_word(name: &str) -> &str {
+    let end = name
+        .char_indices()
+        .find(|(i, c)| {
+            if *i == 0 {
+                !is_name_start(*c)
+            } else {
+                !is_name_part(*c)
+            }
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(name.len());
+    &name[..end]
+}
+
 /// Collapse whitespace runs and trim.
 pub fn normalize_name(s: &str) -> String {
+    if is_normalized(s) {
+        return s.to_string();
+    }
     let mut out = String::with_capacity(s.len());
     let mut ws = false;
     for c in s.chars() {

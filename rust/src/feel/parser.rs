@@ -19,13 +19,47 @@ pub trait ParseEnv {
     fn is_known_name(&self, n: &str) -> bool;
     /// Resolve a named type (item definition or builtin).
     fn resolve_type(&self, n: &str) -> Option<Rc<DmnType>>;
+    /// Could a known name consisting of several tokens start with the word `first`?
+    fn is_multi_token_prefix(&self, _first: &str) -> bool {
+        true
+    }
 }
+
+/// First words of built-in function and type names made of several tokens.
+const BUILTIN_MULTI_FIRST: &[&str] = &[
+    "context",
+    "date",
+    "day",
+    "days",
+    "distinct",
+    "ends",
+    "finished",
+    "get",
+    "index",
+    "insert",
+    "list",
+    "lower",
+    "met",
+    "month",
+    "overlaps",
+    "round",
+    "started",
+    "starts",
+    "string",
+    "substring",
+    "upper",
+    "week",
+    "years",
+];
 
 /// Environment without model information.
 pub struct EmptyEnv;
 
 impl ParseEnv for EmptyEnv {
     fn is_known_name(&self, _n: &str) -> bool {
+        false
+    }
+    fn is_multi_token_prefix(&self, _first: &str) -> bool {
         false
     }
     fn resolve_type(&self, n: &str) -> Option<Rc<DmnType>> {
@@ -163,8 +197,25 @@ impl<'a> Parser<'a> {
     }
 
     /// Length (in tokens) of the longest known name starting at the current position.
+    fn could_be_multi_token(&self, first: &str) -> bool {
+        BUILTIN_MULTI_FIRST.contains(&first)
+            || self.env.is_multi_token_prefix(first)
+            || self.locals.iter().any(|l| {
+                l.len() > first.len()
+                    && l.starts_with(first)
+                    && super::lexer::first_word(l) == first
+            })
+    }
+
     fn known_match_len(&self) -> usize {
         let start = self.pos;
+        let first = match self.toks[start].name() {
+            Some(n) => n,
+            None => return 0,
+        };
+        if !self.could_be_multi_token(first) {
+            return if self.is_known(first) { 1 } else { 0 };
+        }
         let mut best = 0;
         let max = (start + 24).min(self.toks.len() - 1);
         for j in start..max {
@@ -419,16 +470,10 @@ impl<'a> Parser<'a> {
                 self.expect(")")?;
                 break;
             }
-            return Ok(UnaryTests {
-                tests,
-                negated: false,
-            });
+            return Ok(UnaryTests::new(tests, false));
         }
         let t = self.parse_positive_unary_test(false)?;
-        Ok(UnaryTests {
-            tests: vec![t],
-            negated: false,
-        })
+        Ok(UnaryTests::new(vec![t], false))
     }
 
     fn parse_positive_unary_test(&mut self, full: bool) -> PResult<UnaryTest> {
@@ -852,16 +897,10 @@ pub fn parse_type_str(src: &str, env: &dyn ParseEnv) -> PResult<Rc<DmnType>> {
 pub fn parse_unary_tests(src: &str, env: &dyn ParseEnv) -> PResult<UnaryTests> {
     let mut p = Parser::new(src, env)?;
     if p.at_eof() {
-        return Ok(UnaryTests {
-            tests: vec![UnaryTest::Any],
-            negated: false,
-        });
+        return Ok(UnaryTests::new(vec![UnaryTest::Any], false));
     }
     if p.peek().is_punct("-") && matches!(p.peek_at(1).tok, Tok::Eof) {
-        return Ok(UnaryTests {
-            tests: vec![UnaryTest::Any],
-            negated: false,
-        });
+        return Ok(UnaryTests::new(vec![UnaryTest::Any], false));
     }
     let mut negated = false;
     if p.peek().is_name("not") && p.peek_at(1).is_punct("(") {
@@ -898,7 +937,7 @@ pub fn parse_unary_tests(src: &str, env: &dyn ParseEnv) -> PResult<UnaryTests> {
                 p.expect(")")?;
                 break;
             }
-            return finish(&p, UnaryTests { tests, negated });
+            return finish(&p, UnaryTests::new(tests, negated));
         }
     }
     let mut tests = Vec::new();
@@ -916,5 +955,5 @@ pub fn parse_unary_tests(src: &str, env: &dyn ParseEnv) -> PResult<UnaryTests> {
         }
         break;
     }
-    finish(&p, UnaryTests { tests, negated })
+    finish(&p, UnaryTests::new(tests, negated))
 }

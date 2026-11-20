@@ -1,6 +1,6 @@
 //! Reading DMN XML into a raw (uncompiled) representation.
 
-use roxmltree::{Document, Node};
+use super::dom::{self, Element};
 
 #[derive(Debug, Clone)]
 pub struct RawDefinitions {
@@ -171,25 +171,26 @@ pub struct RawExpr {
     pub type_ref: Option<String>,
 }
 
-fn children<'a, 'i>(n: Node<'a, 'i>, name: &'a str) -> impl Iterator<Item = Node<'a, 'i>> + 'a {
-    n.children()
-        .filter(move |c| c.is_element() && c.tag_name().name() == name)
+fn children<'a, 's>(
+    n: &'a Element<'s>,
+    name: &'a str,
+) -> impl Iterator<Item = &'a Element<'s>> + 'a {
+    n.children.iter().filter(move |c| c.name == name)
 }
 
-fn child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
-    n.children()
-        .find(|c| c.is_element() && c.tag_name().name() == name)
+fn child<'a, 's>(n: &'a Element<'s>, name: &str) -> Option<&'a Element<'s>> {
+    n.children.iter().find(|c| c.name == name)
 }
 
-fn attr(n: Node, name: &str) -> Option<String> {
+fn attr(n: &Element, name: &str) -> Option<String> {
     n.attribute(name).map(|s| s.to_string())
 }
 
-fn text_of(n: Node) -> Option<String> {
-    child(n, "text").map(|t| t.children().filter_map(|c| c.text()).collect::<String>())
+fn text_of(n: &Element) -> Option<String> {
+    child(n, "text").map(|t| t.text.to_string())
 }
 
-fn href(n: Node) -> Option<String> {
+fn href(n: &Element) -> Option<String> {
     n.attribute("href").map(|s| s.to_string())
 }
 
@@ -209,24 +210,24 @@ const EXPR_KINDS: &[&str] = &[
     "unaryTests",
 ];
 
-fn is_expr(n: &Node) -> bool {
-    n.is_element() && EXPR_KINDS.contains(&n.tag_name().name())
+fn is_expr(n: &&Element) -> bool {
+    EXPR_KINDS.contains(&n.name)
 }
 
-fn first_expr(n: Node) -> Option<RawExpr> {
-    n.children().find(is_expr).map(read_expr)
+fn first_expr(n: &Element) -> Option<RawExpr> {
+    n.children.iter().find(is_expr).map(read_expr)
 }
 
-fn boxed(n: Node, name: &str) -> Box<RawExpr> {
+fn boxed(n: &Element, name: &str) -> Box<RawExpr> {
     Box::new(child(n, name).and_then(first_expr).unwrap_or(RawExpr {
         kind: RawExprKind::Literal(None),
         type_ref: None,
     }))
 }
 
-fn read_expr(n: Node) -> RawExpr {
+fn read_expr(n: &Element) -> RawExpr {
     let type_ref = attr(n, "typeRef");
-    let kind = match n.tag_name().name() {
+    let kind = match n.name {
         "literalExpression" => RawExprKind::Literal(text_of(n)),
         "unaryTests" => RawExprKind::UnaryTests(text_of(n)),
         "context" => RawExprKind::Context(
@@ -311,7 +312,8 @@ fn read_expr(n: Node) -> RawExpr {
                 .collect();
             let rows = children(n, "row")
                 .map(|r| {
-                    r.children()
+                    r.children
+                        .iter()
                         .filter(is_expr)
                         .map(|e| Some(read_expr(e)))
                         .collect()
@@ -319,7 +321,7 @@ fn read_expr(n: Node) -> RawExpr {
                 .collect();
             RawExprKind::Relation { columns, rows }
         }
-        "list" => RawExprKind::List(n.children().filter(is_expr).map(read_expr).collect()),
+        "list" => RawExprKind::List(n.children.iter().filter(is_expr).map(read_expr).collect()),
         "conditional" => RawExprKind::Conditional {
             cond: boxed(n, "if"),
             then: boxed(n, "then"),
@@ -335,7 +337,7 @@ fn read_expr(n: Node) -> RawExpr {
             ret: boxed(n, "return"),
         },
         "some" | "every" => RawExprKind::Quantified {
-            every: n.tag_name().name() == "every",
+            every: n.name == "every",
             var: attr(n, "iteratorVariable").unwrap_or_default(),
             input: boxed(n, "in"),
             cond: boxed(n, "satisfies"),
@@ -345,10 +347,10 @@ fn read_expr(n: Node) -> RawExpr {
     RawExpr { kind, type_ref }
 }
 
-fn read_item_def(n: Node) -> RawItemDef {
+fn read_item_def(n: &Element) -> RawItemDef {
     RawItemDef {
         name: attr(n, "name").unwrap_or_default(),
-        type_ref: child(n, "typeRef").map(|t| t.text().unwrap_or("").trim().to_string()),
+        type_ref: child(n, "typeRef").map(|t| t.text.trim().to_string()),
         is_collection: n.attribute("isCollection") == Some("true"),
         components: children(n, "itemComponent").map(read_item_def).collect(),
         allowed_values: child(n, "allowedValues").and_then(text_of),
@@ -364,14 +366,14 @@ fn read_item_def(n: Node) -> RawItemDef {
     }
 }
 
-fn var_type(n: Node) -> Option<String> {
+fn var_type(n: &Element) -> Option<String> {
     child(n, "variable").and_then(|v| attr(v, "typeRef"))
 }
 
 pub fn read_definitions(xml: &str) -> Result<RawDefinitions, String> {
-    let doc = Document::parse(xml).map_err(|e| e.to_string())?;
-    let root = doc.root_element();
-    if root.tag_name().name() != "definitions" {
+    let doc = dom::parse(xml, &["DMNDI", "extensionElements"])?;
+    let root = &doc;
+    if root.name != "definitions" {
         return Err("not a DMN definitions document".into());
     }
     let mut defs = RawDefinitions {
@@ -381,10 +383,10 @@ pub fn read_definitions(xml: &str) -> Result<RawDefinitions, String> {
         item_defs: Vec::new(),
         drg: Vec::new(),
     };
-    for n in root.children().filter(|c| c.is_element()) {
+    for n in &root.children {
         let id = attr(n, "id").unwrap_or_default();
         let name = attr(n, "name").unwrap_or_default();
-        match n.tag_name().name() {
+        match n.name {
             "import" => defs.imports.push(RawImport {
                 name: attr(n, "name").unwrap_or_default(),
                 namespace: attr(n, "namespace").unwrap_or_default(),

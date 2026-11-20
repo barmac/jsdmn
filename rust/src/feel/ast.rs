@@ -106,6 +106,8 @@ pub enum UnaryTest {
 pub struct UnaryTests {
     pub tests: Vec<UnaryTest>,
     pub negated: bool,
+    /// Whether any test references `?` (requires binding the input value).
+    pub qmark: bool,
 }
 
 impl Expr {
@@ -150,6 +152,16 @@ impl Expr {
 }
 
 impl UnaryTests {
+    pub fn new(tests: Vec<UnaryTest>, negated: bool) -> UnaryTests {
+        let mut u = UnaryTests {
+            tests,
+            negated,
+            qmark: false,
+        };
+        u.qmark = u.uses_name("?");
+        u
+    }
+
     pub fn uses_name(&self, n: &str) -> bool {
         self.tests.iter().any(|t| match t {
             UnaryTest::Any => false,

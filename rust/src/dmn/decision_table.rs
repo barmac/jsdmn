@@ -138,15 +138,25 @@ impl DecisionTable {
             input_values.push(v);
         }
         // match rules
+        // FIRST needs only the first match, UNIQUE fails as soon as a second one is found
+        let stop_after = match self.hit_policy {
+            HitPolicy::First => 1,
+            HitPolicy::Unique => 2,
+            _ => usize::MAX,
+        };
+        let null = Value::Null;
         let mut matched: Vec<&DtRule> = Vec::new();
         'rules: for rule in &self.rules {
             for (i, ut) in rule.inputs.iter().enumerate() {
-                let x = input_values.get(i).cloned().unwrap_or(Value::Null);
-                if !matches!(eval_unary_tests(ut, &x, scope), Value::Bool(true)) {
+                let x = input_values.get(i).unwrap_or(&null);
+                if !matches!(eval_unary_tests(ut, x, scope), Value::Bool(true)) {
                     continue 'rules;
                 }
             }
             matched.push(rule);
+            if matched.len() >= stop_after {
+                break;
+            }
         }
         if matched.is_empty() {
             if self.outputs.iter().any(|o| o.default.is_some()) {

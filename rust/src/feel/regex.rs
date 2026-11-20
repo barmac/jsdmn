@@ -2,7 +2,28 @@
 
 use fancy_regex::{Regex, RegexBuilder};
 
+/// Compile an XPath regular expression (with flags), caching compiled expressions.
 pub fn translate_regex(pattern: &str, flags: &str) -> Option<Regex> {
+    use std::cell::RefCell;
+    thread_local! {
+        static CACHE: RefCell<rustc_hash::FxHashMap<(String, String), Option<Regex>>> =
+            RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    CACHE.with(|c| {
+        if let Some(r) = c.borrow().get(&(pattern.to_string(), flags.to_string())) {
+            return r.clone();
+        }
+        let r = compile_regex(pattern, flags);
+        let mut c = c.borrow_mut();
+        if c.len() >= 512 {
+            c.clear();
+        }
+        c.insert((pattern.to_string(), flags.to_string()), r.clone());
+        r
+    })
+}
+
+fn compile_regex(pattern: &str, flags: &str) -> Option<Regex> {
     let mut case_insensitive = false;
     let mut dot_all = false;
     let mut multi_line = false;

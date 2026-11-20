@@ -251,39 +251,61 @@ fn test_files(dir: &Path) -> Vec<PathBuf> {
     v
 }
 
-/// Run all test files of one TCK test directory.
-pub fn run_test_dir(dir: &Path, suite: &str) -> Vec<CaseResult> {
-    let mut out = Vec::new();
-    let dmns = dmn_files(dir);
+/// A TCK test directory loaded into memory (models and test files).
+pub struct Suite {
+    pub name: String,
+    pub sources: Vec<String>,
+    pub model_names: Vec<String>,
+    pub files: Vec<(String, TestFile)>,
+}
+
+/// Read the models and test files of one TCK test directory.
+pub fn load_suite(dir: &Path, name: &str) -> Suite {
     let mut sources = Vec::new();
-    let mut names = Vec::new();
-    for d in &dmns {
+    let mut model_names = Vec::new();
+    for d in &dmn_files(dir) {
         if let Ok(s) = fs::read_to_string(d) {
             sources.push(s);
-            names.push(d.file_name().unwrap().to_string_lossy().to_string());
+            model_names.push(d.file_name().unwrap().to_string_lossy().to_string());
         }
     }
-    let engine = Engine::from_xml(&sources).ok();
+    let mut files = Vec::new();
     for tf in test_files(dir) {
-        let file = match read_test_file(&tf) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-        let file_name = tf.file_stem().unwrap().to_string_lossy().to_string();
+        if let Ok(f) = read_test_file(&tf) {
+            files.push((tf.file_stem().unwrap().to_string_lossy().to_string(), f));
+        }
+    }
+    Suite {
+        name: name.to_string(),
+        sources,
+        model_names,
+        files,
+    }
+}
+
+/// Compile the models of a suite.
+pub fn compile_suite(suite: &Suite) -> Option<Engine> {
+    Engine::from_xml(&suite.sources).ok()
+}
+
+/// Run all test cases of a suite against a compiled engine.
+pub fn run_suite(suite: &Suite, engine: Option<&Engine>) -> Vec<CaseResult> {
+    let mut out = Vec::new();
+    for (file_name, file) in &suite.files {
         for case in &file.cases {
-            let (success, message) = match &engine {
+            let (success, message) = match engine {
                 None => (false, "model failed to load".to_string()),
                 Some(engine) => {
                     let main = file
                         .model_name
                         .as_ref()
-                        .and_then(|m| names.iter().position(|n| n == m))
+                        .and_then(|m| suite.model_names.iter().position(|n| n == m))
                         .unwrap_or(0);
                     run_case(engine, main, case)
                 }
             };
             out.push(CaseResult {
-                suite: suite.to_string(),
+                suite: suite.name.clone(),
                 file: file_name.clone(),
                 id: case.id.clone(),
                 success,
@@ -292,6 +314,18 @@ pub fn run_test_dir(dir: &Path, suite: &str) -> Vec<CaseResult> {
         }
     }
     out
+}
+
+/// Run all test files of one TCK test directory.
+pub fn run_test_dir(dir: &Path, suite: &str) -> Vec<CaseResult> {
+    let suite = load_suite(dir, suite);
+    let engine = compile_suite(&suite);
+    run_suite(&suite, engine.as_ref())
+}
+
+fn verbose() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("TCK_VERBOSE").is_ok())
 }
 
 fn run_case(engine: &Engine, main: usize, case: &TestCase) -> (bool, String) {
@@ -341,11 +375,38 @@ fn run_case(engine: &Engine, main: usize, case: &TestCase) -> (bool, String) {
                 "'{}' expected {:?} but was {:?}",
                 r.name, r.expected, actual
             ));
-        } else if std::env::var("TCK_VERBOSE").is_ok() {
+        } else if verbose() {
             eprintln!("  ok '{}' = {:?}", r.name, actual);
         }
     }
     (failures.is_empty(), failures.join("; "))
+}
+
+/// Load every test directory found below `root` (e.g. `tck/TestCases`).
+pub fn load_all(root: &Path, levels: &[&str], filter: Option<&str>) -> Vec<Suite> {
+    let mut out = Vec::new();
+    for level in levels {
+        let ldir = root.join(level);
+        let mut dirs: Vec<PathBuf> = match fs::read_dir(&ldir) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect(),
+            Err(_) => continue,
+        };
+        dirs.sort();
+        for d in dirs {
+            let suite = format!("{}/{}", level, d.file_name().unwrap().to_string_lossy());
+            if let Some(f) = filter
+                && !suite.contains(f)
+            {
+                continue;
+            }
+            out.push(load_suite(&d, &suite));
+        }
+    }
+    out
 }
 
 /// Run every test directory found below `root` (e.g. `tck/TestCases`).

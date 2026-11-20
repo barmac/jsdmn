@@ -7,12 +7,14 @@ use crate::feel::ast::{
 };
 use crate::feel::eval::{Closure, Function, NativeFunction, Scope, eval};
 use crate::feel::lexer::normalize_name;
+use crate::feel::optimize::{fold_expr, fold_unary_tests};
 use crate::feel::parser::{ParseEnv, parse_expression, parse_type_str, parse_unary_tests};
 use crate::types::{self, DmnType, NamedType};
 use crate::value::{Context, Value};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Ref {
@@ -63,12 +65,17 @@ impl Model {
 
 struct ModelEnv<'a> {
     names: &'a HashSet<String>,
+    /// First words of known names made of several tokens.
+    multi: &'a HashSet<String>,
     types: &'a HashMap<String, Rc<DmnType>>,
 }
 
 impl ParseEnv for ModelEnv<'_> {
     fn is_known_name(&self, n: &str) -> bool {
         self.names.contains(n)
+    }
+    fn is_multi_token_prefix(&self, first: &str) -> bool {
+        self.multi.contains(first)
     }
     fn resolve_type(&self, n: &str) -> Option<Rc<DmnType>> {
         if let Some(t) = self.types.get(n) {
@@ -209,20 +216,20 @@ fn resolve_typeref(s: &Option<String>, env: &ModelEnv) -> Option<TypeRef> {
 
 fn parse_ut(s: &str, env: &ModelEnv) -> UnaryTests {
     match parse_unary_tests(s, env) {
-        Ok(u) => u,
-        Err(e) => UnaryTests {
-            tests: vec![UnaryTest::Expr {
+        Ok(u) => fold_unary_tests(u, &|n| env.names.contains(n)),
+        Err(e) => UnaryTests::new(
+            vec![UnaryTest::Expr {
                 expr: Expr::Error(e.0),
                 uses_qmark: true,
             }],
-            negated: false,
-        },
+            false,
+        ),
     }
 }
 
 fn parse_feel(s: &str, env: &ModelEnv) -> Expr {
     match parse_expression(s, env) {
-        Ok(e) => e,
+        Ok(e) => fold_expr(e, &|n| env.names.contains(n)),
         Err(e) => Expr::Error(e.0),
     }
 }
@@ -496,6 +503,23 @@ type PendingRefs = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
 
 pub struct Engine {
     pub models: Rc<Vec<Rc<Model>>>,
+    roots: Rc<RootCache>,
+}
+
+/// Root scopes (BKMs and decision services) of each model, shared by all
+/// sessions of an engine. They do not depend on session inputs.
+#[derive(Default)]
+struct RootCache {
+    scopes: RefCell<FxHashMap<usize, Rc<Scope>>>,
+}
+
+impl Drop for RootCache {
+    fn drop(&mut self) {
+        // BKM closures capture their root scope: break the reference cycles
+        for s in self.scopes.borrow().values() {
+            s.clear();
+        }
+    }
 }
 
 fn split_href(h: &str) -> (&str, &str) {
@@ -511,6 +535,13 @@ impl Engine {
         for r in &raws {
             collect_names(r, &mut names);
         }
+        let multi: HashSet<String> = names
+            .iter()
+            .filter_map(|n| {
+                let f = crate::feel::lexer::first_word(n);
+                (f.len() < n.len()).then(|| f.to_string())
+            })
+            .collect();
         // phase 1: type shells
         let shells: Vec<Vec<(String, Rc<NamedType>)>> = raws
             .iter()
@@ -547,6 +578,7 @@ impl Engine {
         for (mi, r) in raws.iter().enumerate() {
             let env = ModelEnv {
                 names: &names,
+                multi: &multi,
                 types: &registries[mi],
             };
             for (item, (_, shell)) in r.item_defs.iter().zip(shells[mi].iter()) {
@@ -559,6 +591,7 @@ impl Engine {
         for (mi, r) in raws.iter().enumerate() {
             let env = ModelEnv {
                 names: &names,
+                multi: &multi,
                 types: &registries[mi],
             };
             let mut elements = Vec::new();
@@ -688,6 +721,7 @@ impl Engine {
             }
         }
         Engine {
+            roots: Rc::new(RootCache::default()),
             models: Rc::new(models.into_iter().map(Rc::new).collect()),
         }
     }
@@ -708,21 +742,24 @@ impl Engine {
     }
 
     pub fn session(&self) -> Session {
-        Session::new(self.models.clone())
+        Session::new(self.models.clone(), self.roots.clone())
     }
 }
 
 /// Evaluation session: inputs plus memoized decision results.
 pub struct Session {
     pub models: Rc<Vec<Rc<Model>>>,
-    inputs: HashMap<(usize, Rc<str>), Value>,
-    cache: RefCell<HashMap<Ref, Value>>,
-    roots: RefCell<HashMap<usize, Rc<Scope>>>,
-    active: RefCell<HashSet<Ref>>,
+    inputs: FxHashMap<(usize, Rc<str>), Value>,
+    /// Inputs that do not correspond to a model element (free variables).
+    free: Vec<(usize, Rc<str>, Value)>,
+    cache: RefCell<FxHashMap<Ref, Value>>,
+    roots: Rc<RootCache>,
+    active: RefCell<FxHashSet<Ref>>,
 }
 
 struct ServiceFn {
     models: Rc<Vec<Rc<Model>>>,
+    roots: Weak<RootCache>,
     r: Ref,
 }
 
@@ -753,7 +790,8 @@ impl NativeFunction for ServiceFn {
             } => (input_decisions, input_data),
             _ => return Value::Null,
         };
-        let mut session = Session::new(self.models.clone());
+        let roots = self.roots.upgrade().unwrap_or_default();
+        let mut session = Session::new(self.models.clone(), roots);
         let params: Vec<Ref> = input_data
             .iter()
             .chain(input_decisions.iter())
@@ -781,19 +819,24 @@ impl NativeFunction for ServiceFn {
 }
 
 impl Session {
-    fn new(models: Rc<Vec<Rc<Model>>>) -> Session {
+    fn new(models: Rc<Vec<Rc<Model>>>, roots: Rc<RootCache>) -> Session {
         Session {
             models,
-            inputs: HashMap::new(),
-            cache: RefCell::new(HashMap::new()),
-            roots: RefCell::new(HashMap::new()),
-            active: RefCell::new(HashSet::new()),
+            inputs: FxHashMap::default(),
+            free: Vec::new(),
+            cache: RefCell::new(FxHashMap::default()),
+            roots,
+            active: RefCell::new(FxHashSet::default()),
         }
     }
 
     pub fn set_input(&mut self, model: usize, name: &str, v: Value) {
-        self.inputs
-            .insert((model, Rc::from(normalize_name(name).as_str())), v);
+        let name: Rc<str> = Rc::from(normalize_name(name).as_str());
+        if self.models[model].find(&name).is_none() {
+            self.free.retain(|(m, n, _)| !(*m == model && *n == name));
+            self.free.push((model, name.clone(), v.clone()));
+        }
+        self.inputs.insert((model, name), v);
     }
 
     fn import_prefix(&self, from: usize, target: usize) -> Option<String> {
@@ -871,11 +914,11 @@ impl Session {
 
     /// Root scope of a model: all BKMs and decision services (plus imported ones).
     fn root_scope(&self, m: usize) -> Rc<Scope> {
-        if let Some(s) = self.roots.borrow().get(&m) {
+        if let Some(s) = self.roots.scopes.borrow().get(&m) {
             return s.clone();
         }
         let scope = Scope::root();
-        self.roots.borrow_mut().insert(m, scope.clone());
+        self.roots.scopes.borrow_mut().insert(m, scope.clone());
         let model = self.models[m].clone();
         for (idx, el) in model.elements.iter().enumerate() {
             if let Some(v) = self.invocable_value(Ref { model: m, idx }, &scope) {
@@ -929,6 +972,7 @@ impl Session {
             ElementKind::Service { .. } => Some(Value::Function(Rc::new(Function::Native(
                 Rc::new(ServiceFn {
                     models: self.models.clone(),
+                    roots: Rc::downgrade(&self.roots),
                     r,
                 }),
             )))),
@@ -978,8 +1022,8 @@ impl Session {
             ElementKind::Decision { ty, info, logic } => {
                 let scope = Scope::child(&self.root_scope(r.model));
                 // inputs that do not correspond to any model element are free variables
-                for ((m, name), v) in &self.inputs {
-                    if *m == r.model && self.models[*m].find(name).is_none() {
+                for (m, name, v) in &self.free {
+                    if *m == r.model {
                         scope.set(name, v.clone());
                     }
                 }
@@ -1037,6 +1081,7 @@ impl Session {
         let r = Ref { model, idx };
         let f = ServiceFn {
             models: self.models.clone(),
+            roots: Rc::downgrade(&self.roots),
             r,
         };
         let names = f.param_names();

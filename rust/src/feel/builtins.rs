@@ -249,7 +249,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                         Date::parse(s).map(|d| Value::DateTime(DateTime::from_date(d)))
                     }
                 }
-                Value::DateTime(d) => Some(Value::DateTime(d.clone())),
+                Value::DateTime(d) => Some(Value::DateTime(*d)),
                 Value::Date(d) => Some(Value::DateTime(DateTime::from_date(*d))),
                 _ => None,
             },
@@ -260,7 +260,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     _ => return None,
                 };
                 let time = match a[1].as_ref()? {
-                    Value::Time(t) => t.clone(),
+                    Value::Time(t) => *t,
                     _ => return None,
                 };
                 Some(Value::DateTime(DateTime { date, time }))
@@ -300,12 +300,12 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             if sig == 0 {
                 match a[0].as_ref()? {
                     Value::String(s) => Time::parse(s).map(Value::Time),
-                    Value::Time(t) => Some(Value::Time(t.clone())),
+                    Value::Time(t) => Some(Value::Time(*t)),
                     Value::DateTime(dt) => {
-                        let mut t = dt.time.clone();
+                        let mut t = dt.time;
                         if let Some(Zone::Id(_)) = &t.zone {
                             // keep zone id
-                            t.zone = dt.time.zone.clone();
+                            t.zone = dt.time.zone;
                         }
                         Some(Value::Time(t))
                     }
@@ -614,7 +614,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             nums.sort();
             let n = nums.len();
             if n % 2 == 1 {
-                Some(Value::Number(nums[n / 2].clone()))
+                Some(Value::Number(nums[n / 2]))
             } else {
                 nums[n / 2 - 1]
                     .add(&nums[n / 2])
@@ -840,30 +840,42 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     Value::Function(f) => f.clone(),
                     _ => return None,
                 };
-                let mut err = false;
-                // insertion sort with user comparator (stable, tolerant of inconsistent comparators)
-                let mut sorted: Vec<Value> = Vec::with_capacity(l.len());
-                for x in l {
-                    let mut pos = sorted.len();
-                    for (i, y) in sorted.iter().enumerate() {
-                        match call(&f, vec![x.clone(), y.clone()], scope) {
-                            Value::Bool(true) => {
-                                pos = i;
-                                break;
-                            }
-                            Value::Bool(false) => {}
-                            _ => {
-                                err = true;
-                                break;
+                // merge sort with the user comparator: O(n log n) calls; an element of
+                // the right run is taken first only if it precedes the left one
+                let precedes = |x: &Value, y: &Value| -> Option<bool> {
+                    match call(&f, vec![x.clone(), y.clone()], scope) {
+                        Value::Bool(b) => Some(b),
+                        _ => None,
+                    }
+                };
+                let n = l.len();
+                let mut src = l;
+                let mut dst: Vec<Value> = Vec::with_capacity(n);
+                let mut width = 1;
+                while width < n {
+                    dst.clear();
+                    let mut start = 0;
+                    while start < n {
+                        let mid = (start + width).min(n);
+                        let end = (start + 2 * width).min(n);
+                        let (mut i, mut j) = (start, mid);
+                        while i < mid && j < end {
+                            if precedes(&src[j], &src[i])? {
+                                dst.push(src[j].clone());
+                                j += 1;
+                            } else {
+                                dst.push(src[i].clone());
+                                i += 1;
                             }
                         }
+                        dst.extend_from_slice(&src[i..mid]);
+                        dst.extend_from_slice(&src[j..end]);
+                        start = end;
                     }
-                    sorted.insert(pos, x);
+                    std::mem::swap(&mut src, &mut dst);
+                    width *= 2;
                 }
-                if err {
-                    return None;
-                }
-                Some(Value::list(sorted))
+                Some(Value::list(src))
             } else {
                 let mut err = false;
                 l.sort_by(|x, y| {
@@ -1172,7 +1184,7 @@ fn date_of(v: &Value) -> Option<Date> {
 }
 
 fn months_between(from: &Date, to: &Date) -> i64 {
-    let mut months = (to.year - from.year) * 12 + to.month as i64 - from.month as i64;
+    let mut months = (to.year as i64 - from.year as i64) * 12 + to.month as i64 - from.month as i64;
     if months > 0 && to.day < from.day {
         months -= 1;
     } else if months < 0 && to.day > from.day {
@@ -1518,7 +1530,7 @@ pub fn call_external(spec: &Value, args: Vec<Value>) -> Value {
         | ("java.lang.Byte", "valueOf", ["byte"])
         | ("java.lang.Integer", "valueOf", ["int"])
         | ("java.lang.Long", "valueOf", ["long"]) => match args.first() {
-            Some(Value::Number(n)) if n.is_integer() => Value::Number(n.clone()),
+            Some(Value::Number(n)) if n.is_integer() => Value::Number(*n),
             _ => Value::Null,
         },
         ("java.lang.String", "valueOf", ["char"]) => match args.first() {
