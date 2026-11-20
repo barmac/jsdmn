@@ -121,7 +121,12 @@ fn parse_value(n: &Element) -> Value {
 
 pub fn read_test_file(path: &Path) -> Result<TestFile, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let root = dom::parse_with(&text, &["extensionElements"], true)?;
+    parse_test_file(&text, path)
+}
+
+/// Parse the content of a TCK test case file.
+pub fn parse_test_file(text: &str, path: &Path) -> Result<TestFile, String> {
+    let root = dom::parse_with(text, &["extensionElements"], true)?;
     if root.name != "testCases" {
         return Err("not a test case file".into());
     }
@@ -266,6 +271,37 @@ pub fn load_suite(dir: &Path, name: &str) -> Suite {
         sources,
         model_names,
         files,
+    }
+}
+
+impl Suite {
+    /// Build a suite from in-memory files: `(file name, content)` pairs of the
+    /// DMN models and of the test case files.
+    pub fn from_sources(
+        name: &str,
+        models: Vec<(String, String)>,
+        tests: Vec<(String, String)>,
+    ) -> Suite {
+        let mut models = models;
+        models.sort();
+        let mut tests = tests;
+        tests.sort();
+        let (model_names, sources) = models.into_iter().unzip();
+        let files = tests
+            .into_iter()
+            .filter_map(|(file, text)| {
+                let stem = file.strip_suffix(".xml").unwrap_or(&file).to_string();
+                parse_test_file(&text, Path::new(&file))
+                    .ok()
+                    .map(|f| (stem, f))
+            })
+            .collect();
+        Suite {
+            name: name.to_string(),
+            sources,
+            model_names,
+            files,
+        }
     }
 }
 
@@ -426,6 +462,9 @@ pub fn run_all(root: &Path, levels: &[&str], filter: Option<&str>) -> Vec<CaseRe
         .map(|n| n.get())
         .unwrap_or(1)
         .min(dirs.len().max(1));
+    if workers <= 1 {
+        return dirs.iter().flat_map(|(d, s)| run_test_dir(d, s)).collect();
+    }
     let next = std::sync::atomic::AtomicUsize::new(0);
     let mut results: Vec<(usize, Vec<CaseResult>)> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..workers)

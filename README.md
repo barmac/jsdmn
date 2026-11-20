@@ -18,7 +18,8 @@ git submodule update --init
 cd rust && cargo test --release
 ```
 
-See [rust/README.md](./rust/README.md) for details.
+See [rust/README.md](./rust/README.md) for details. It can be compiled to WebAssembly and run in the
+browser: see [rust/wasm](./rust/wasm) for the bindings and an example page.
 
 ## Usage
 

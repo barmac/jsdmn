@@ -298,12 +298,22 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fancy-regex",
+ "js-sys",
  "memchr",
  "mimalloc",
  "num-bigint",
  "num-integer",
  "num-traits",
  "rustc-hash",
+]
+
+[[package]]
+name = "rsdmn-wasm"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "rsdmn",
+ "wasm-bindgen",
 ]
 
 [[package]]

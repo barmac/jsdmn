@@ -35,6 +35,11 @@ let v = rsdmn::feel::evaluate("for x in 1..3 return x * 2", &[]).unwrap();
 println!("{:?}", v); // prints [2, 4, 6]
 ```
 
+## WebAssembly
+
+The engine also runs in the browser: [`wasm/`](./wasm) contains JavaScript
+bindings and an example page. See [wasm/README.md](./wasm/README.md).
+
 ## Running the TCK
 
 ```sh

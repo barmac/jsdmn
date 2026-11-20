@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod clock;
 pub mod dmn;
 pub mod feel;
 pub mod number;

@@ -38,7 +38,7 @@ jobs:
       with:
         workspaces: rust
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all --check
     - name: Lint
       run: cargo clippy --all-targets -- -D warnings
     - name: Test (including the full DMN TCK)
@@ -52,3 +52,51 @@ jobs:
       with:
         name: tck-results
         path: rust/tck_results.csv
+
+  WebAssembly:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: rust
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+        components: clippy
+    - name: Install wasm-bindgen
+      uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-bindgen@0.2.130
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    - name: Build
+      run: ./wasm/build.sh
+    - name: Lint
+      run: cargo clippy -p rsdmn-wasm --target wasm32-unknown-unknown -- -D warnings
+    - name: Test API
+      run: node wasm/test/api.mjs
+    - name: TCK (WebAssembly)
+      run: node wasm/test/tck.mjs
+    - name: Browser test
+      run: |
+        npm install --no-save --prefix wasm playwright
+        npx --prefix wasm playwright install --with-deps chromium
+        node wasm/test/browser.mjs
+    - name: Upload example
+      uses: actions/upload-artifact@v4
+      with:
+        name: wasm-example
+        path: rust/wasm/www

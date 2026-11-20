@@ -1309,18 +1309,11 @@ fn dispatch(b: B, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> Option<
         }
         B::WeekOfYear => Some(Value::int(date_of(a[0].as_ref()?)?.week_of_year() as i64)),
         B::Now => {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()?;
-            let nanos = now.as_nanos() as i128;
-            let nanos = nanos - nanos % 1_000_000;
+            let nanos = crate::clock::now_millis() * 1_000_000;
             DateTime::from_instant(nanos, Zone::Offset(0)).map(Value::DateTime)
         }
         B::Today => {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()?;
-            let days = (now.as_secs() / 86400) as i64;
+            let days = crate::clock::now_millis().div_euclid(86_400_000) as i64;
             Date::from_days(days).map(Value::Date)
         }
         // ---- ranges

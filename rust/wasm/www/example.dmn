@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="https://github.com/barmac/jsdmn/examples/loan-approval"
+             name="Loan Approval" id="loan_approval">
+
+  <itemDefinition name="tApplicant">
+    <itemComponent name="age">
+      <typeRef>number</typeRef>
+    </itemComponent>
+    <itemComponent name="monthly income">
+      <typeRef>number</typeRef>
+    </itemComponent>
+    <itemComponent name="credit score">
+      <typeRef>number</typeRef>
+    </itemComponent>
+    <itemComponent name="employment">
+      <typeRef>string</typeRef>
+      <allowedValues>
+        <text>"EMPLOYED", "SELF-EMPLOYED", "UNEMPLOYED"</text>
+      </allowedValues>
+    </itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tRisk">
+    <typeRef>string</typeRef>
+    <allowedValues>
+      <text>"LOW", "MEDIUM", "HIGH"</text>
+    </allowedValues>
+  </itemDefinition>
+
+  <inputData id="applicant" name="Applicant">
+    <variable name="Applicant" typeRef="tApplicant"/>
+  </inputData>
+  <inputData id="amount" name="Requested Amount">
+    <variable name="Requested Amount" typeRef="number"/>
+  </inputData>
+  <inputData id="term" name="Term">
+    <variable name="Term" typeRef="number"/>
+  </inputData>
+  <inputData id="application_date" name="Application Date">
+    <variable name="Application Date" typeRef="date"/>
+  </inputData>
+
+  <!-- annuity payment of a loan -->
+  <businessKnowledgeModel id="monthly_payment" name="Monthly Payment">
+    <variable name="Monthly Payment"/>
+    <encapsulatedLogic kind="FEEL" typeRef="number">
+      <formalParameter name="amount" typeRef="number"/>
+      <formalParameter name="rate" typeRef="number"/>
+      <formalParameter name="term" typeRef="number"/>
+      <literalExpression>
+        <text>(amount * rate / 12) / (1 - (1 + rate / 12) ** -term)</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="risk_category" name="Risk Category">
+    <variable name="Risk Category" typeRef="tRisk"/>
+    <informationRequirement>
+      <requiredInput href="#applicant"/>
+    </informationRequirement>
+    <decisionTable hitPolicy="UNIQUE">
+      <input label="Credit score">
+        <inputExpression typeRef="number">
+          <text>Applicant.credit score</text>
+        </inputExpression>
+      </input>
+      <input label="Employment">
+        <inputExpression typeRef="string">
+          <text>Applicant.employment</text>
+        </inputExpression>
+      </input>
+      <output name="risk" typeRef="tRisk"/>
+      <rule>
+        <inputEntry><text>&gt;= 740</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"LOW"</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>[670..740)</text></inputEntry>
+        <inputEntry><text>"EMPLOYED", "SELF-EMPLOYED"</text></inputEntry>
+        <outputEntry><text>"MEDIUM"</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>[670..740)</text></inputEntry>
+        <inputEntry><text>"UNEMPLOYED"</text></inputEntry>
+        <outputEntry><text>"HIGH"</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>&lt; 670</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"HIGH"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="interest_rate" name="Interest Rate">
+    <variable name="Interest Rate" typeRef="number"/>
+    <informationRequirement>
+      <requiredDecision href="#risk_category"/>
+    </informationRequirement>
+    <decisionTable hitPolicy="UNIQUE">
+      <input label="Risk">
+        <inputExpression typeRef="tRisk">
+          <text>Risk Category</text>
+        </inputExpression>
+      </input>
+      <output name="rate" typeRef="number"/>
+      <rule>
+        <inputEntry><text>"LOW"</text></inputEntry>
+        <outputEntry><text>0.045</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>"MEDIUM"</text></inputEntry>
+        <outputEntry><text>0.0575</text></outputEntry>
+      </rule>
+      <rule>
+        <inputEntry><text>"HIGH"</text></inputEntry>
+        <outputEntry><text>0.0825</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="payment" name="Payment">
+    <variable name="Payment" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#amount"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#term"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#interest_rate"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#monthly_payment"/>
+    </knowledgeRequirement>
+    <invocation>
+      <literalExpression><text>Monthly Payment</text></literalExpression>
+      <binding>
+        <parameter name="amount"/>
+        <literalExpression><text>Requested Amount</text></literalExpression>
+      </binding>
+      <binding>
+        <parameter name="rate"/>
+        <literalExpression><text>Interest Rate</text></literalExpression>
+      </binding>
+      <binding>
+        <parameter name="term"/>
+        <literalExpression><text>Term</text></literalExpression>
+      </binding>
+    </invocation>
+  </decision>
+
+  <decision id="debt_to_income" name="Debt To Income">
+    <variable name="Debt To Income" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#applicant"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#payment"/>
+    </informationRequirement>
+    <literalExpression>
+      <text>Payment / Applicant.monthly income</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="eligibility" name="Eligibility">
+    <variable name="Eligibility" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#applicant"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#debt_to_income"/>
+    </informationRequirement>
+    <literalExpression>
+      <text>
+        if Applicant.age &lt; 18 then "INELIGIBLE: the applicant is a minor"
+        else if Debt To Income &gt; 0.43 then "INELIGIBLE: the debt-to-income ratio is above 43%"
+        else "ELIGIBLE"
+      </text>
+    </literalExpression>
+  </decision>
+
+  <decision id="first_payment" name="First Payment Date">
+    <variable name="First Payment Date" typeRef="date"/>
+    <informationRequirement>
+      <requiredInput href="#application_date"/>
+    </informationRequirement>
+    <literalExpression>
+      <text>Application Date + duration("P1M")</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="last_payment" name="Last Payment Date">
+    <variable name="Last Payment Date" typeRef="date"/>
+    <informationRequirement>
+      <requiredInput href="#term"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#first_payment"/>
+    </informationRequirement>
+    <literalExpression>
+      <text>First Payment Date + duration("P" + string(Term - 1) + "M")</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="summary" name="Summary">
+    <variable name="Summary"/>
+    <informationRequirement>
+      <requiredInput href="#amount"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#term"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#eligibility"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#risk_category"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#interest_rate"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#payment"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#first_payment"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#last_payment"/>
+    </informationRequirement>
+    <context>
+      <contextEntry>
+        <variable name="eligibility" typeRef="string"/>
+        <literalExpression><text>Eligibility</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="risk" typeRef="tRisk"/>
+        <literalExpression><text>Risk Category</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="annual rate" typeRef="number"/>
+        <literalExpression><text>Interest Rate</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="monthly payment" typeRef="number"/>
+        <literalExpression><text>decimal(Payment, 2)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="total interest" typeRef="number"/>
+        <literalExpression><text>decimal(Payment * Term - Requested Amount, 2)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="first payment" typeRef="date"/>
+        <literalExpression><text>First Payment Date</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="last payment" typeRef="date"/>
+        <literalExpression><text>Last Payment Date</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+</definitions>

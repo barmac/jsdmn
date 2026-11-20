@@ -1,0 +1,17 @@
+[package]
+name = "rsdmn-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "WebAssembly bindings of the rsdmn DMN engine"
+license = "MIT"
+repository = "https://github.com/barmac/jsdmn"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rsdmn = { path = ".." }
+# keep in sync with the wasm-bindgen CLI used by build.sh
+wasm-bindgen = "=0.2.130"
+js-sys = "0.3.107"
