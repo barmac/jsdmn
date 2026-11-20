@@ -16,3 +16,39 @@ jobs:
       run: npm ci
     - name: Build
       run: npm run all
+
+  Rust:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: rust
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+    - name: Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    - name: Format
+      run: cargo fmt --check
+    - name: Lint
+      run: cargo clippy --all-targets -- -D warnings
+    - name: Test (including the full DMN TCK)
+      run: cargo test --release
+      env:
+        RSDMN_REQUIRE_TCK: 1
+    - name: TCK report
+      run: cargo run --release --bin tck -- ../tck/TestCases --quiet --csv tck_results.csv
+    - name: Upload TCK results
+      uses: actions/upload-artifact@v4
+      with:
+        name: tck-results
+        path: rust/tck_results.csv

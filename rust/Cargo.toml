@@ -1,0 +1,16 @@
+[package]
+name = "rsdmn"
+version = "0.1.0"
+edition = "2024"
+description = "DMN 1.5 interpreter (FEEL + decision models) passing the DMN TCK"
+license = "MIT"
+repository = "https://github.com/barmac/jsdmn"
+
+[dependencies]
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+fancy-regex = "0.20.2"
+num-bigint = "0.5.1"
+num-integer = "0.1.47"
+num-traits = "0.2.19"
+roxmltree = "0.21.2"

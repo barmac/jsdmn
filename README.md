@@ -8,6 +8,18 @@ Evaluate DMN 1.3 decisions both in NodeJS and in browser.
 
 This project is built for learning, so don't expect production-readiness soon (or anytime, really). Nevertheless, the end goal is to pass [the dmntck test suite](https://github.com/dmn-tck/tck).
 
+## Rust implementation
+
+The [`rust`](./rust) directory contains a DMN 1.5 interpreter written in Rust which passes all
+3437 test cases of compliance levels 2 and 3 of the DMN TCK (included as the `tck` git submodule):
+
+```sh
+git submodule update --init
+cd rust && cargo test --release
+```
+
+See [rust/README.md](./rust/README.md) for details.
+
 ## Usage
 
 ```javascript

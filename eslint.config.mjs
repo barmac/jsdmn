@@ -11,6 +11,11 @@ const files = {
 
 export default [
 
+  // the TCK submodule and the Rust implementation are not linted
+  {
+    ignores: [ 'tck/**', 'rust/**' ]
+  },
+
   // build + test
   ...bpmnIoPlugin.configs.node.map(config => {
 
