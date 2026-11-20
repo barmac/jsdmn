@@ -1,14 +1,12 @@
 //! Runner for the DMN Technology Compatibility Kit (https://github.com/dmn-tck/tck).
 
+use crate::dmn::dom::{self, Element};
 use crate::dmn::engine::Engine;
 use crate::number::Number;
 use crate::temporal::{self, Date, DateTime, Time};
 use crate::value::{Context, Value, feel_eq};
-use roxmltree::{Document, Node};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const XSI: &str = "http://www.w3.org/2001/XMLSchema-instance";
 
 #[derive(Debug, Clone)]
 pub struct InputNode {
@@ -50,21 +48,27 @@ pub struct CaseResult {
     pub message: String,
 }
 
-fn child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
-    n.children()
-        .find(|c| c.is_element() && c.tag_name().name() == name)
+fn child<'a, 's>(n: &'a Element<'s>, name: &str) -> Option<&'a Element<'s>> {
+    n.children.iter().find(|c| c.name == name)
 }
 
-fn is_nil(n: Node) -> bool {
-    n.attribute((XSI, "nil")) == Some("true")
+fn children<'a, 's>(
+    n: &'a Element<'s>,
+    name: &'a str,
+) -> impl Iterator<Item = &'a Element<'s>> + 'a {
+    n.children.iter().filter(move |c| c.name == name)
 }
 
-fn typed_value(n: Node) -> Value {
+fn is_nil(n: &Element) -> bool {
+    n.attribute("nil") == Some("true")
+}
+
+fn typed_value(n: &Element) -> Value {
     if is_nil(n) {
         return Value::Null;
     }
-    let text: String = n.children().filter_map(|c| c.text()).collect();
-    let ty = n.attribute((XSI, "type")).unwrap_or("xsd:string");
+    let text: &str = &n.text;
+    let ty = n.attribute("type").unwrap_or("xsd:string");
     let ty = ty.rsplit(':').next().unwrap_or(ty);
     let t = text.trim();
     match ty {
@@ -86,12 +90,12 @@ fn typed_value(n: Node) -> Value {
             Some(temporal::Duration::Ym(d)) => Value::YmDuration(d),
             None => Value::Null,
         },
-        _ => Value::str(&text),
+        _ => Value::str(text),
     }
 }
 
 /// Parse a `valueType` element (`value` | `component`* | `list`).
-pub fn parse_value(n: Node) -> Value {
+fn parse_value(n: &Element) -> Value {
     if is_nil(n) {
         return Value::Null;
     }
@@ -102,22 +106,13 @@ pub fn parse_value(n: Node) -> Value {
         if is_nil(l) {
             return Value::Null;
         }
-        return Value::list(
-            l.children()
-                .filter(|c| c.is_element() && c.tag_name().name() == "item")
-                .map(parse_value)
-                .collect(),
-        );
+        return Value::list(children(l, "item").map(parse_value).collect());
     }
-    let comps: Vec<Node> = n
-        .children()
-        .filter(|c| c.is_element() && c.tag_name().name() == "component")
-        .collect();
-    if !comps.is_empty() {
+    let mut comps = children(n, "component").peekable();
+    if comps.peek().is_some() {
         let mut ctx = Context::new();
         for c in comps {
-            let name = c.attribute("name").unwrap_or("").to_string();
-            ctx.put(name.as_str(), parse_value(c));
+            ctx.put(c.attribute("name").unwrap_or(""), parse_value(c));
         }
         return Value::context(ctx);
     }
@@ -126,34 +121,24 @@ pub fn parse_value(n: Node) -> Value {
 
 pub fn read_test_file(path: &Path) -> Result<TestFile, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let doc = Document::parse(&text).map_err(|e| e.to_string())?;
-    let root = doc.root_element();
-    if root.tag_name().name() != "testCases" {
+    let root = dom::parse_with(&text, &["extensionElements"], true)?;
+    if root.name != "testCases" {
         return Err("not a test case file".into());
     }
-    let model_name = child(root, "modelName")
-        .and_then(|m| m.text())
-        .map(|s| s.trim().to_string());
+    let model_name = child(&root, "modelName").map(|m| m.text.trim().to_string());
     let mut cases = Vec::new();
-    for tc in root
-        .children()
-        .filter(|c| c.is_element() && c.tag_name().name() == "testCase")
-    {
+    for tc in children(&root, "testCase") {
         let id = tc.attribute("id").unwrap_or("").to_string();
         let kind = tc.attribute("type").unwrap_or("decision").to_string();
         let invocable = tc.attribute("invocableName").map(|s| s.to_string());
-        let inputs = tc
-            .children()
-            .filter(|c| c.is_element() && c.tag_name().name() == "inputNode")
+        let inputs = children(tc, "inputNode")
             .map(|i| InputNode {
                 name: i.attribute("name").unwrap_or("").to_string(),
                 namespace: i.attribute("namespace").map(|s| s.to_string()),
                 value: parse_value(i),
             })
             .collect();
-        let results = tc
-            .children()
-            .filter(|c| c.is_element() && c.tag_name().name() == "resultNode")
+        let results = children(tc, "resultNode")
             .map(|r| ResultNode {
                 name: r.attribute("name").unwrap_or("").to_string(),
                 namespace: r.attribute("namespace").map(|s| s.to_string()),
@@ -181,7 +166,8 @@ pub fn numbers_match(a: &Number, b: &Number) -> bool {
     if a == b {
         return true;
     }
-    if std::env::var("TCK_STRICT_NUMBERS").is_ok() {
+    static STRICT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *STRICT.get_or_init(|| std::env::var("TCK_STRICT_NUMBERS").is_ok()) {
         return false;
     }
     let tol = Number::parse("0.00000001").unwrap();
@@ -410,11 +396,14 @@ pub fn load_all(root: &Path, levels: &[&str], filter: Option<&str>) -> Vec<Suite
 }
 
 /// Run every test directory found below `root` (e.g. `tck/TestCases`).
+///
+/// Test directories are independent, so they are run on all available CPU
+/// cores; the results are returned in directory order.
 pub fn run_all(root: &Path, levels: &[&str], filter: Option<&str>) -> Vec<CaseResult> {
-    let mut out = Vec::new();
+    let mut dirs: Vec<(PathBuf, String)> = Vec::new();
     for level in levels {
         let ldir = root.join(level);
-        let mut dirs: Vec<PathBuf> = match fs::read_dir(&ldir) {
+        let mut found: Vec<PathBuf> = match fs::read_dir(&ldir) {
             Ok(rd) => rd
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
@@ -422,16 +411,43 @@ pub fn run_all(root: &Path, levels: &[&str], filter: Option<&str>) -> Vec<CaseRe
                 .collect(),
             Err(_) => continue,
         };
-        dirs.sort();
-        for d in dirs {
+        found.sort();
+        for d in found {
             let suite = format!("{}/{}", level, d.file_name().unwrap().to_string_lossy());
             if let Some(f) = filter
                 && !suite.contains(f)
             {
                 continue;
             }
-            out.extend(run_test_dir(&d, &suite));
+            dirs.push((d, suite));
         }
     }
-    out
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(dirs.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut results: Vec<(usize, Vec<CaseResult>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= dirs.len() {
+                            break;
+                        }
+                        out.push((i, run_test_dir(&dirs[i].0, &dirs[i].1)));
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
+    });
+    results.sort_by_key(|(i, _)| *i);
+    results.into_iter().flat_map(|(_, r)| r).collect()
 }

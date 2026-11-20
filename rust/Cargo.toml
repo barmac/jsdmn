@@ -15,7 +15,6 @@ mimalloc = { version = "0.1.52", optional = true }
 num-bigint = "0.5.1"
 num-integer = "0.1.47"
 num-traits = "0.2.19"
-roxmltree = "0.21.2"
 rustc-hash = "2.1.3"
 
 [profile.release]

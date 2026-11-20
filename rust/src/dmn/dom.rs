@@ -61,6 +61,7 @@ struct Parser<'a> {
     src: &'a str,
     b: &'a [u8],
     pos: usize,
+    keep_ws: bool,
 }
 
 #[inline]
@@ -338,7 +339,7 @@ impl<'a> Parser<'a> {
             if next > self.pos {
                 let raw = &src[self.pos..next];
                 if let Some(top) = stack.last_mut()
-                    && !raw.bytes().all(is_ws)
+                    && (self.keep_ws || !raw.bytes().all(is_ws))
                 {
                     append_text(&mut top.text, raw, false)?;
                 }
@@ -418,11 +419,17 @@ impl<'a> Parser<'a> {
 
 /// Parse an XML document, skipping the subtrees of the elements named in `skip`.
 pub fn parse<'a>(xml: &'a str, skip: &[&str]) -> Result<Element<'a>, String> {
+    parse_with(xml, skip, false)
+}
+
+/// Like `parse`; `keep_ws` keeps whitespace-only character data.
+pub fn parse_with<'a>(xml: &'a str, skip: &[&str], keep_ws: bool) -> Result<Element<'a>, String> {
     let xml = xml.strip_prefix('\u{feff}').unwrap_or(xml);
     Parser {
         src: xml,
         b: xml.as_bytes(),
         pos: 0,
+        keep_ws,
     }
     .parse(skip)
 }
