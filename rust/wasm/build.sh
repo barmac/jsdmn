@@ -12,6 +12,6 @@
 set -e
 cd "$(dirname "$0")/.."
 cargo build --release --target wasm32-unknown-unknown -p rsdmn-wasm
-WASM=target/wasm32-unknown-unknown/release/rsdmn_wasm.wasm
+WASM="${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/rsdmn_wasm.wasm"
 wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir wasm/www/pkg "$WASM"
 ls -l wasm/www/pkg/*.wasm
