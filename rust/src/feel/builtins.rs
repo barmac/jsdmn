@@ -8,98 +8,390 @@ use crate::value::{CmpOp, Context, Value, feel_cmp, feel_eq, to_feel_string};
 use std::cmp::Ordering;
 use std::rc::Rc;
 
+/// Built-in functions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum B {
+    Date,
+    DateAndTime,
+    Time,
+    Number,
+    String,
+    Duration,
+    YearsAndMonthsDuration,
+    Not,
+    Is,
+    Substring,
+    StringLength,
+    UpperCase,
+    LowerCase,
+    SubstringBefore,
+    SubstringAfter,
+    Contains,
+    StartsWith,
+    EndsWith,
+    Replace,
+    Matches,
+    Split,
+    StringJoin,
+    ListContains,
+    Count,
+    Reverse,
+    DistinctValues,
+    Flatten,
+    Min,
+    Max,
+    Sum,
+    Mean,
+    All,
+    Any,
+    Product,
+    Median,
+    Stddev,
+    Mode,
+    Sublist,
+    Append,
+    Concatenate,
+    Union,
+    InsertBefore,
+    Remove,
+    IndexOf,
+    Sort,
+    ListReplace,
+    Decimal,
+    Floor,
+    Ceiling,
+    RoundUp,
+    RoundDown,
+    RoundHalfUp,
+    RoundHalfDown,
+    Abs,
+    Modulo,
+    Sqrt,
+    Log,
+    Exp,
+    Odd,
+    Even,
+    DayOfYear,
+    DayOfWeek,
+    MonthOfYear,
+    WeekOfYear,
+    Now,
+    Today,
+    Before,
+    After,
+    Meets,
+    MetBy,
+    Overlaps,
+    OverlapsBefore,
+    OverlapsAfter,
+    Finishes,
+    FinishedBy,
+    Includes,
+    During,
+    Starts,
+    StartedBy,
+    Coincides,
+    GetValue,
+    GetEntries,
+    Context,
+    ContextPut,
+    ContextMerge,
+    Range,
+}
+
+impl B {
+    pub fn from_name(name: &str) -> Option<B> {
+        Some(match name {
+            "date" => B::Date,
+            "date and time" => B::DateAndTime,
+            "time" => B::Time,
+            "number" => B::Number,
+            "string" => B::String,
+            "duration" => B::Duration,
+            "years and months duration" => B::YearsAndMonthsDuration,
+            "not" => B::Not,
+            "is" => B::Is,
+            "substring" => B::Substring,
+            "string length" => B::StringLength,
+            "upper case" => B::UpperCase,
+            "lower case" => B::LowerCase,
+            "substring before" => B::SubstringBefore,
+            "substring after" => B::SubstringAfter,
+            "contains" => B::Contains,
+            "starts with" => B::StartsWith,
+            "ends with" => B::EndsWith,
+            "replace" => B::Replace,
+            "matches" => B::Matches,
+            "split" => B::Split,
+            "string join" => B::StringJoin,
+            "list contains" => B::ListContains,
+            "count" => B::Count,
+            "reverse" => B::Reverse,
+            "distinct values" => B::DistinctValues,
+            "flatten" => B::Flatten,
+            "min" => B::Min,
+            "max" => B::Max,
+            "sum" => B::Sum,
+            "mean" => B::Mean,
+            "all" => B::All,
+            "any" => B::Any,
+            "product" => B::Product,
+            "median" => B::Median,
+            "stddev" => B::Stddev,
+            "mode" => B::Mode,
+            "sublist" => B::Sublist,
+            "append" => B::Append,
+            "concatenate" => B::Concatenate,
+            "union" => B::Union,
+            "insert before" => B::InsertBefore,
+            "remove" => B::Remove,
+            "index of" => B::IndexOf,
+            "sort" => B::Sort,
+            "list replace" => B::ListReplace,
+            "decimal" => B::Decimal,
+            "floor" => B::Floor,
+            "ceiling" => B::Ceiling,
+            "round up" => B::RoundUp,
+            "round down" => B::RoundDown,
+            "round half up" => B::RoundHalfUp,
+            "round half down" => B::RoundHalfDown,
+            "abs" => B::Abs,
+            "modulo" => B::Modulo,
+            "sqrt" => B::Sqrt,
+            "log" => B::Log,
+            "exp" => B::Exp,
+            "odd" => B::Odd,
+            "even" => B::Even,
+            "day of year" => B::DayOfYear,
+            "day of week" => B::DayOfWeek,
+            "month of year" => B::MonthOfYear,
+            "week of year" => B::WeekOfYear,
+            "now" => B::Now,
+            "today" => B::Today,
+            "before" => B::Before,
+            "after" => B::After,
+            "meets" => B::Meets,
+            "met by" => B::MetBy,
+            "overlaps" => B::Overlaps,
+            "overlaps before" => B::OverlapsBefore,
+            "overlaps after" => B::OverlapsAfter,
+            "finishes" => B::Finishes,
+            "finished by" => B::FinishedBy,
+            "includes" => B::Includes,
+            "during" => B::During,
+            "starts" => B::Starts,
+            "started by" => B::StartedBy,
+            "coincides" => B::Coincides,
+            "get value" => B::GetValue,
+            "get entries" => B::GetEntries,
+            "context" => B::Context,
+            "context put" => B::ContextPut,
+            "context merge" => B::ContextMerge,
+            "range" => B::Range,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            B::Date => "date",
+            B::DateAndTime => "date and time",
+            B::Time => "time",
+            B::Number => "number",
+            B::String => "string",
+            B::Duration => "duration",
+            B::YearsAndMonthsDuration => "years and months duration",
+            B::Not => "not",
+            B::Is => "is",
+            B::Substring => "substring",
+            B::StringLength => "string length",
+            B::UpperCase => "upper case",
+            B::LowerCase => "lower case",
+            B::SubstringBefore => "substring before",
+            B::SubstringAfter => "substring after",
+            B::Contains => "contains",
+            B::StartsWith => "starts with",
+            B::EndsWith => "ends with",
+            B::Replace => "replace",
+            B::Matches => "matches",
+            B::Split => "split",
+            B::StringJoin => "string join",
+            B::ListContains => "list contains",
+            B::Count => "count",
+            B::Reverse => "reverse",
+            B::DistinctValues => "distinct values",
+            B::Flatten => "flatten",
+            B::Min => "min",
+            B::Max => "max",
+            B::Sum => "sum",
+            B::Mean => "mean",
+            B::All => "all",
+            B::Any => "any",
+            B::Product => "product",
+            B::Median => "median",
+            B::Stddev => "stddev",
+            B::Mode => "mode",
+            B::Sublist => "sublist",
+            B::Append => "append",
+            B::Concatenate => "concatenate",
+            B::Union => "union",
+            B::InsertBefore => "insert before",
+            B::Remove => "remove",
+            B::IndexOf => "index of",
+            B::Sort => "sort",
+            B::ListReplace => "list replace",
+            B::Decimal => "decimal",
+            B::Floor => "floor",
+            B::Ceiling => "ceiling",
+            B::RoundUp => "round up",
+            B::RoundDown => "round down",
+            B::RoundHalfUp => "round half up",
+            B::RoundHalfDown => "round half down",
+            B::Abs => "abs",
+            B::Modulo => "modulo",
+            B::Sqrt => "sqrt",
+            B::Log => "log",
+            B::Exp => "exp",
+            B::Odd => "odd",
+            B::Even => "even",
+            B::DayOfYear => "day of year",
+            B::DayOfWeek => "day of week",
+            B::MonthOfYear => "month of year",
+            B::WeekOfYear => "week of year",
+            B::Now => "now",
+            B::Today => "today",
+            B::Before => "before",
+            B::After => "after",
+            B::Meets => "meets",
+            B::MetBy => "met by",
+            B::Overlaps => "overlaps",
+            B::OverlapsBefore => "overlaps before",
+            B::OverlapsAfter => "overlaps after",
+            B::Finishes => "finishes",
+            B::FinishedBy => "finished by",
+            B::Includes => "includes",
+            B::During => "during",
+            B::Starts => "starts",
+            B::StartedBy => "started by",
+            B::Coincides => "coincides",
+            B::GetValue => "get value",
+            B::GetEntries => "get entries",
+            B::Context => "context",
+            B::ContextPut => "context put",
+            B::ContextMerge => "context merge",
+            B::Range => "range",
+        }
+    }
+}
+
 /// Signatures: list of parameter name lists. A trailing `...` marks varargs.
-fn signatures(name: &str) -> Option<&'static [&'static [&'static str]]> {
-    Some(match name {
-        "date" => &[&["from"], &["year", "month", "day"]],
-        "date and time" => &[
+fn signatures(b: B) -> &'static [&'static [&'static str]] {
+    match b {
+        B::Date => &[&["from"], &["year", "month", "day"]],
+        B::DateAndTime => &[
             &["from"],
             &["date", "time"],
             &["year", "month", "day", "hour", "minute", "second"],
             &["year", "month", "day", "hour", "minute", "second", "offset"],
         ],
-        "time" => &[
+        B::Time => &[
             &["from"],
             &["hour", "minute", "second"],
             &["hour", "minute", "second", "offset"],
         ],
-        "number" => &[
+        B::Number => &[
             &["from", "grouping separator", "decimal separator"],
             &["from"],
         ],
-        "string" => &[&["from"]],
-        "duration" => &[&["from"]],
-        "years and months duration" => &[&["from", "to"]],
-        "not" => &[&["negand"]],
-        "is" => &[&["value1", "value2"]],
-        "substring" => &[
+        B::String => &[&["from"]],
+        B::Duration => &[&["from"]],
+        B::YearsAndMonthsDuration => &[&["from", "to"]],
+        B::Not => &[&["negand"]],
+        B::Is => &[&["value1", "value2"]],
+        B::Substring => &[
             &["string", "start position"],
             &["string", "start position", "length"],
         ],
-        "string length" | "upper case" | "lower case" => &[&["string"]],
-        "substring before" | "substring after" | "contains" | "starts with" | "ends with" => {
+        B::StringLength | B::UpperCase | B::LowerCase => &[&["string"]],
+        B::SubstringBefore | B::SubstringAfter | B::Contains | B::StartsWith | B::EndsWith => {
             &[&["string", "match"]]
         }
-        "replace" => &[
+        B::Replace => &[
             &["input", "pattern", "replacement"],
             &["input", "pattern", "replacement", "flags"],
         ],
-        "matches" => &[&["input", "pattern"], &["input", "pattern", "flags"]],
-        "split" => &[&["string", "delimiter"], &["string", "delimiter", "flags"]],
-        "string join" => &[&["list"], &["list", "delimiter"]],
-        "list contains" => &[&["list", "element"]],
-        "count" | "reverse" | "distinct values" | "flatten" => &[&["list"]],
-        "min" | "max" | "sum" | "mean" | "all" | "any" | "product" | "median" | "stddev"
-        | "mode" => &[&["list"], &["..."]],
-        "sublist" => &[
+        B::Matches => &[&["input", "pattern"], &["input", "pattern", "flags"]],
+        B::Split => &[&["string", "delimiter"], &["string", "delimiter", "flags"]],
+        B::StringJoin => &[&["list"], &["list", "delimiter"]],
+        B::ListContains => &[&["list", "element"]],
+        B::Count | B::Reverse | B::DistinctValues | B::Flatten => &[&["list"]],
+        B::Min
+        | B::Max
+        | B::Sum
+        | B::Mean
+        | B::All
+        | B::Any
+        | B::Product
+        | B::Median
+        | B::Stddev
+        | B::Mode => &[&["list"], &["..."]],
+        B::Sublist => &[
             &["list", "start position"],
             &["list", "start position", "length"],
         ],
-        "append" => &[&["list", "..."]],
-        "concatenate" | "union" => &[&["..."]],
-        "insert before" => &[&["list", "position", "newItem"]],
-        "remove" => &[&["list", "position"]],
-        "index of" => &[&["list", "match"]],
-        "sort" => &[&["list"], &["list", "precedes"]],
-        "list replace" => &[
+        B::Append => &[&["list", "..."]],
+        B::Concatenate | B::Union => &[&["..."]],
+        B::InsertBefore => &[&["list", "position", "newItem"]],
+        B::Remove => &[&["list", "position"]],
+        B::IndexOf => &[&["list", "match"]],
+        B::Sort => &[&["list"], &["list", "precedes"]],
+        B::ListReplace => &[
             &["list", "position", "newItem"],
             &["list", "match", "newItem"],
         ],
-        "decimal" => &[&["n", "scale"]],
-        "floor" | "ceiling" => &[&["n"], &["n", "scale"]],
-        "round up" | "round down" | "round half up" | "round half down" => {
-            &[&["n"], &["n", "scale"]]
-        }
-        "abs" => &[&["n"]],
-        "modulo" => &[&["dividend", "divisor"]],
-        "sqrt" | "log" | "exp" | "odd" | "even" => &[&["number"]],
-        "day of year" | "day of week" | "month of year" | "week of year" => &[&["date"]],
-        "now" | "today" => &[&[]],
-        "before" | "after" | "meets" | "met by" | "overlaps" | "overlaps before"
-        | "overlaps after" | "finishes" | "finished by" | "includes" | "during" | "starts"
-        | "started by" | "coincides" => &[
+        B::Decimal => &[&["n", "scale"]],
+        B::Floor | B::Ceiling => &[&["n"], &["n", "scale"]],
+        B::RoundUp | B::RoundDown | B::RoundHalfUp | B::RoundHalfDown => &[&["n"], &["n", "scale"]],
+        B::Abs => &[&["n"]],
+        B::Modulo => &[&["dividend", "divisor"]],
+        B::Sqrt | B::Log | B::Exp | B::Odd | B::Even => &[&["number"]],
+        B::DayOfYear | B::DayOfWeek | B::MonthOfYear | B::WeekOfYear => &[&["date"]],
+        B::Now | B::Today => &[&[]],
+        B::Before
+        | B::After
+        | B::Meets
+        | B::MetBy
+        | B::Overlaps
+        | B::OverlapsBefore
+        | B::OverlapsAfter
+        | B::Finishes
+        | B::FinishedBy
+        | B::Includes
+        | B::During
+        | B::Starts
+        | B::StartedBy
+        | B::Coincides => &[
             &["point1", "point2"],
             &["point", "range"],
             &["range", "point"],
             &["range1", "range2"],
         ],
-        "get value" => &[&["m", "key"]],
-        "get entries" => &[&["m"]],
-        "context" => &[&["entries"]],
-        "context put" => &[&["context", "key", "value"], &["context", "keys", "value"]],
-        "context merge" => &[&["contexts"]],
-        "range" => &[&["from"]],
-        _ => return None,
-    })
+        B::GetValue => &[&["m", "key"]],
+        B::GetEntries => &[&["m"]],
+        B::Context => &[&["entries"]],
+        B::ContextPut => &[&["context", "key", "value"], &["context", "keys", "value"]],
+        B::ContextMerge => &[&["contexts"]],
+        B::Range => &[&["from"]],
+    }
 }
 
 pub fn is_builtin_name(n: &str) -> bool {
-    signatures(n).is_some()
+    B::from_name(n).is_some()
 }
 
 /// Resolve call arguments into positional arguments (None = omitted).
-fn resolve_args(name: &str, args: CallArgs) -> Option<(usize, Vec<Option<Value>>)> {
-    let sigs = signatures(name)?;
+fn resolve_args(b: B, args: CallArgs) -> Option<(usize, Vec<Option<Value>>)> {
+    let sigs = signatures(b);
     match args {
         CallArgs::Positional(v) => {
             // varargs?
@@ -205,24 +497,33 @@ fn varargs(args: &[Option<Value>], sig: usize) -> Option<Vec<Value>> {
 }
 
 pub fn call_builtin(name: &str, args: CallArgs, scope: &Rc<Scope>) -> Value {
-    if name == "context put"
+    match B::from_name(name) {
+        Some(b) => call_builtin_id(b, args, scope),
+        None => Value::Null,
+    }
+}
+
+/// Call a built-in function.
+pub fn call_builtin_id(b: B, args: CallArgs, scope: &Rc<Scope>) -> Value {
+    if b == B::ContextPut
         && let CallArgs::Named(n) = &args
         && n.iter()
             .any(|(k, v)| &**k == "key" && matches!(v, Value::List(_)))
     {
         return Value::Null;
     }
-    let (sig, a) = match resolve_args(name, args) {
+    let (sig, a) = match resolve_args(b, args) {
         Some(x) => x,
         None => return Value::Null,
     };
-    opt(dispatch(name, sig, &a, scope))
+    opt(dispatch(b, sig, &a, scope))
 }
 
-fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> Option<Value> {
-    match name {
+fn dispatch(b: B, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> Option<Value> {
+    let name = b.name();
+    match b {
         // ---- conversion
-        "date" => {
+        B::Date => {
             if sig == 0 {
                 match a[0].as_ref()? {
                     Value::String(s) => Date::parse(s).map(Value::Date),
@@ -240,7 +541,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 Date::new(y, m as u32, d as u32).map(Value::Date)
             }
         }
-        "date and time" => match sig {
+        B::DateAndTime => match sig {
             0 => match a[0].as_ref()? {
                 Value::String(s) => {
                     if s.contains('T') {
@@ -296,7 +597,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 Some(Value::DateTime(DateTime { date, time }))
             }
         },
-        "time" => {
+        B::Time => {
             if sig == 0 {
                 match a[0].as_ref()? {
                     Value::String(s) => Time::parse(s).map(Value::Time),
@@ -351,7 +652,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 .map(Value::Time)
             }
         }
-        "number" => {
+        B::Number => {
             let s = string(&a[0])?;
             let (g, d) = if sig == 0 {
                 (
@@ -383,14 +684,14 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Number::parse(&t).map(Value::Number)
         }
-        "string" => {
+        B::String => {
             let v = a[0].as_ref()?;
             if v.is_null() {
                 return None;
             }
             Some(Value::str(&to_feel_string(v)))
         }
-        "duration" => match a[0].as_ref()? {
+        B::Duration => match a[0].as_ref()? {
             Value::String(s) => match temporal::parse_duration(s)? {
                 temporal::Duration::Dt(d) => Some(Value::DtDuration(d)),
                 temporal::Duration::Ym(d) => Some(Value::YmDuration(d)),
@@ -399,23 +700,23 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             Value::YmDuration(d) => Some(Value::YmDuration(*d)),
             _ => None,
         },
-        "years and months duration" => {
+        B::YearsAndMonthsDuration => {
             let from = date_of(a[0].as_ref()?)?;
             let to = date_of(a[1].as_ref()?)?;
             Some(Value::YmDuration(YmDuration(months_between(&from, &to))))
         }
         // ---- boolean
-        "not" => match a[0].as_ref()? {
+        B::Not => match a[0].as_ref()? {
             Value::Bool(b) => Some(Value::Bool(!b)),
             _ => None,
         },
-        "is" => {
+        B::Is => {
             let x = a[0].as_ref()?;
             let y = a[1].as_ref()?;
             Some(Value::Bool(is_same(x, y)))
         }
         // ---- strings
-        "substring" => {
+        B::Substring => {
             let s = string(&a[0])?;
             let start = num(&a[1])?.trunc_i64()?;
             let chars: Vec<char> = s.chars().collect();
@@ -448,10 +749,10 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     .collect::<String>(),
             ))
         }
-        "string length" => Some(Value::int(string(&a[0])?.chars().count() as i64)),
-        "upper case" => Some(Value::str(&string(&a[0])?.to_uppercase())),
-        "lower case" => Some(Value::str(&string(&a[0])?.to_lowercase())),
-        "substring before" => {
+        B::StringLength => Some(Value::int(string(&a[0])?.chars().count() as i64)),
+        B::UpperCase => Some(Value::str(&string(&a[0])?.to_uppercase())),
+        B::LowerCase => Some(Value::str(&string(&a[0])?.to_lowercase())),
+        B::SubstringBefore => {
             let s = string(&a[0])?;
             let m = string(&a[1])?;
             Some(Value::str(match s.find(m) {
@@ -459,7 +760,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 None => "",
             }))
         }
-        "substring after" => {
+        B::SubstringAfter => {
             let s = string(&a[0])?;
             let m = string(&a[1])?;
             Some(Value::str(match s.find(m) {
@@ -467,17 +768,17 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 None => "",
             }))
         }
-        "contains" => Some(bool_v(string(&a[0])?.contains(string(&a[1])?))),
-        "starts with" => Some(bool_v(string(&a[0])?.starts_with(string(&a[1])?))),
-        "ends with" => Some(bool_v(string(&a[0])?.ends_with(string(&a[1])?))),
-        "matches" => {
+        B::Contains => Some(bool_v(string(&a[0])?.contains(string(&a[1])?))),
+        B::StartsWith => Some(bool_v(string(&a[0])?.starts_with(string(&a[1])?))),
+        B::EndsWith => Some(bool_v(string(&a[0])?.ends_with(string(&a[1])?))),
+        B::Matches => {
             let input = string(&a[0])?;
             let pattern = string(&a[1])?;
             let flags = if sig == 1 { flags_arg(&a[2])? } else { "" };
             let re = translate_regex(pattern, flags)?;
             re.is_match(input).ok().map(Value::Bool)
         }
-        "replace" => {
+        B::Replace => {
             let input = string(&a[0])?;
             let pattern = string(&a[1])?;
             let repl = string(&a[2])?;
@@ -503,7 +804,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             out.push_str(&input[last..]);
             Some(Value::str(&out))
         }
-        "split" => {
+        B::Split => {
             let s = string(&a[0])?;
             let d = string(&a[1])?;
             let flags = if sig == 1 { flags_arg(&a[2])? } else { "" };
@@ -521,7 +822,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             out.push(Value::str(&s[last..]));
             Some(Value::list(out))
         }
-        "string join" => {
+        B::StringJoin => {
             let l = list_arg(&a[0])?;
             let delim = if sig == 1 {
                 match a[1].as_ref()? {
@@ -543,13 +844,13 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             Some(Value::str(&parts.join(&delim)))
         }
         // ---- lists
-        "list contains" => {
+        B::ListContains => {
             let l = list_arg(&a[0])?;
             let e = a[1].clone().unwrap_or(Value::Null);
             Some(bool_v(l.iter().any(|x| feel_eq(x, &e) == Some(true))))
         }
-        "count" => Some(Value::int(list_arg(&a[0])?.len() as i64)),
-        "min" | "max" => {
+        B::Count => Some(Value::int(list_arg(&a[0])?.len() as i64)),
+        B::Min | B::Max => {
             let items = varargs(a, sig)?;
             if items.is_empty() {
                 return None;
@@ -568,7 +869,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(best)
         }
-        "sum" => {
+        B::Sum => {
             let items = varargs(a, sig)?;
             if items.is_empty() {
                 return None;
@@ -579,7 +880,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::Number(s))
         }
-        "mean" => {
+        B::Mean => {
             let items = varargs(a, sig)?;
             if items.is_empty() {
                 return None;
@@ -591,7 +892,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             s.div(&Number::from_i64(items.len() as i64))
                 .map(Value::Number)
         }
-        "product" => {
+        B::Product => {
             let items = varargs(a, sig)?;
             if items.is_empty() {
                 return None;
@@ -602,7 +903,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::Number(s))
         }
-        "median" => {
+        B::Median => {
             let items = varargs(a, sig)?;
             let mut nums: Vec<Number> = items
                 .iter()
@@ -622,7 +923,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     .map(Value::Number)
             }
         }
-        "stddev" => {
+        B::Stddev => {
             let items = varargs(a, sig)?;
             let nums: Vec<Number> = items
                 .iter()
@@ -645,7 +946,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             let var = sq.div(&n.sub(&Number::one()))?;
             var.sqrt().map(Value::Number)
         }
-        "mode" => {
+        B::Mode => {
             let items = varargs(a, sig)?;
             if items.iter().any(|x| x.is_null()) {
                 return None;
@@ -675,7 +976,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::list(modes))
         }
-        "all" | "any" => {
+        B::All | B::Any => {
             let items = match varargs(a, sig) {
                 Some(i) => i,
                 None => {
@@ -700,7 +1001,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 Some(Value::Bool(!target))
             }
         }
-        "sublist" => {
+        B::Sublist => {
             let l = list_arg(&a[0])?;
             let start = int(&a[1])?;
             let len = l.len() as i64;
@@ -725,7 +1026,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             };
             Some(Value::list(l[begin as usize..end as usize].to_vec()))
         }
-        "append" => {
+        B::Append => {
             let mut l = match a[0].as_ref()? {
                 Value::List(l) => l.as_ref().clone(),
                 _ => return None,
@@ -735,7 +1036,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::list(l))
         }
-        "concatenate" => {
+        B::Concatenate => {
             let mut out = Vec::new();
             for x in a {
                 match x.as_ref()? {
@@ -745,7 +1046,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::list(out))
         }
-        "insert before" => {
+        B::InsertBefore => {
             let mut l = list_arg(&a[0])?.as_ref().clone();
             let p = int(&a[1])?;
             let len = l.len() as i64;
@@ -763,7 +1064,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             l.insert(idx as usize, a[2].clone().unwrap_or(Value::Null));
             Some(Value::list(l))
         }
-        "remove" => {
+        B::Remove => {
             let mut l = list_arg(&a[0])?.as_ref().clone();
             let p = int(&a[1])?;
             let len = l.len() as i64;
@@ -780,12 +1081,12 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             l.remove(idx as usize);
             Some(Value::list(l))
         }
-        "reverse" => {
+        B::Reverse => {
             let mut l = list_arg(&a[0])?.as_ref().clone();
             l.reverse();
             Some(Value::list(l))
         }
-        "index of" => {
+        B::IndexOf => {
             let l = list_arg(&a[0])?;
             let m = a[1].clone().unwrap_or(Value::Null);
             Some(Value::list(
@@ -796,7 +1097,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     .collect(),
             ))
         }
-        "union" => {
+        B::Union => {
             let mut out: Vec<Value> = Vec::new();
             for x in a {
                 let items = match x.as_ref()? {
@@ -811,7 +1112,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::list(out))
         }
-        "distinct values" => {
+        B::DistinctValues => {
             let l = list_arg(&a[0])?;
             let mut out: Vec<Value> = Vec::new();
             for i in l.iter() {
@@ -821,7 +1122,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::list(out))
         }
-        "flatten" => {
+        B::Flatten => {
             let l = list_arg(&a[0])?;
             let mut out = Vec::new();
             fn flat(v: &Value, out: &mut Vec<Value>) {
@@ -833,7 +1134,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             l.iter().for_each(|x| flat(x, &mut out));
             Some(Value::list(out))
         }
-        "sort" => {
+        B::Sort => {
             let mut l = list_arg(&a[0])?.as_ref().clone();
             if sig == 1 {
                 let f = match a[1].as_ref()? {
@@ -890,7 +1191,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 Some(Value::list(l))
             }
         }
-        "list replace" => {
+        B::ListReplace => {
             let mut l = list_arg(&a[0])?.as_ref().clone();
             let new_item = a[2].clone().unwrap_or(Value::Null);
             match a[1].as_ref()? {
@@ -925,12 +1226,12 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
         }
         // ---- numbers
-        "decimal" => {
+        B::Decimal => {
             let n = num(&a[0])?;
             let s = scale(&a[1])?;
             Some(Value::Number(n.round_scale(s, Rounding::HalfEven)))
         }
-        "floor" | "ceiling" => {
+        B::Floor | B::Ceiling => {
             let n = num(&a[0])?;
             let s = if sig == 1 { scale(&a[1])? } else { 0 };
             Some(Value::Number(n.round_scale(
@@ -942,7 +1243,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 },
             )))
         }
-        "round up" | "round down" | "round half up" | "round half down" => {
+        B::RoundUp | B::RoundDown | B::RoundHalfUp | B::RoundHalfDown => {
             let n = num(&a[0])?;
             let s = if sig == 1 { scale(&a[1])? } else { 0 };
             let mode = match name {
@@ -953,17 +1254,17 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             };
             Some(Value::Number(n.round_scale(s, mode)))
         }
-        "abs" => match a[0].as_ref()? {
+        B::Abs => match a[0].as_ref()? {
             Value::Number(n) => Some(Value::Number(n.abs())),
             Value::DtDuration(d) => Some(Value::DtDuration(DtDuration(d.0.abs()))),
             Value::YmDuration(d) => Some(Value::YmDuration(YmDuration(d.0.abs()))),
             _ => None,
         },
-        "modulo" => num(&a[0])?.modulo(num(&a[1])?).map(Value::Number),
-        "sqrt" => num(&a[0])?.sqrt().map(Value::Number),
-        "log" => num(&a[0])?.ln().map(Value::Number),
-        "exp" => num(&a[0])?.exp_fn().map(Value::Number),
-        "odd" | "even" => {
+        B::Modulo => num(&a[0])?.modulo(num(&a[1])?).map(Value::Number),
+        B::Sqrt => num(&a[0])?.sqrt().map(Value::Number),
+        B::Log => num(&a[0])?.ln().map(Value::Number),
+        B::Exp => num(&a[0])?.exp_fn().map(Value::Number),
+        B::Odd | B::Even => {
             let n = num(&a[0])?;
             if !n.is_integer() {
                 return None;
@@ -974,8 +1275,8 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             Some(Value::Bool(if name == "even" { is_even } else { !is_even }))
         }
         // ---- dates
-        "day of year" => Some(Value::int(date_of(a[0].as_ref()?)?.day_of_year() as i64)),
-        "day of week" => {
+        B::DayOfYear => Some(Value::int(date_of(a[0].as_ref()?)?.day_of_year() as i64)),
+        B::DayOfWeek => {
             let d = date_of(a[0].as_ref()?)?;
             let names = [
                 "Monday",
@@ -988,7 +1289,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             ];
             Some(Value::str(names[d.weekday() as usize - 1]))
         }
-        "month of year" => {
+        B::MonthOfYear => {
             let d = date_of(a[0].as_ref()?)?;
             let names = [
                 "January",
@@ -1006,8 +1307,8 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             ];
             Some(Value::str(names[d.month as usize - 1]))
         }
-        "week of year" => Some(Value::int(date_of(a[0].as_ref()?)?.week_of_year() as i64)),
-        "now" => {
+        B::WeekOfYear => Some(Value::int(date_of(a[0].as_ref()?)?.week_of_year() as i64)),
+        B::Now => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()?;
@@ -1015,7 +1316,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             let nanos = nanos - nanos % 1_000_000;
             DateTime::from_instant(nanos, Zone::Offset(0)).map(Value::DateTime)
         }
-        "today" => {
+        B::Today => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()?;
@@ -1023,13 +1324,22 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             Date::from_days(days).map(Value::Date)
         }
         // ---- ranges
-        "before" | "after" | "meets" | "met by" | "overlaps" | "overlaps before"
-        | "overlaps after" | "finishes" | "finished by" | "includes" | "during" | "starts"
-        | "started by" | "coincides" => {
-            range_fn(name, sig, a[0].as_ref()?, a[1].as_ref()?).map(Value::Bool)
-        }
+        B::Before
+        | B::After
+        | B::Meets
+        | B::MetBy
+        | B::Overlaps
+        | B::OverlapsBefore
+        | B::OverlapsAfter
+        | B::Finishes
+        | B::FinishedBy
+        | B::Includes
+        | B::During
+        | B::Starts
+        | B::StartedBy
+        | B::Coincides => range_fn(name, sig, a[0].as_ref()?, a[1].as_ref()?).map(Value::Bool),
         // ---- contexts
-        "get value" => {
+        B::GetValue => {
             let m = match a[0].as_ref()? {
                 Value::Context(c) => c.clone(),
                 _ => return None,
@@ -1049,7 +1359,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                 _ => None,
             }
         }
-        "get entries" => {
+        B::GetEntries => {
             let m = match a[0].as_ref()? {
                 Value::Context(c) => c.clone(),
                 _ => return None,
@@ -1066,7 +1376,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
                     .collect(),
             ))
         }
-        "context" => {
+        B::Context => {
             let l = match a[0].as_ref()? {
                 Value::List(l) => l.as_ref().clone(),
                 Value::Context(c) => vec![Value::Context(c.clone())],
@@ -1092,7 +1402,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::context(out))
         }
-        "context put" => {
+        B::ContextPut => {
             let ctx = match a[0].as_ref()? {
                 Value::Context(c) => c.clone(),
                 _ => return None,
@@ -1127,7 +1437,7 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             put(&ctx, &keys, value).map(Value::context)
         }
-        "context merge" => {
+        B::ContextMerge => {
             let l = match a[0].as_ref()? {
                 Value::List(l) => l.as_ref().clone(),
                 Value::Context(c) => vec![Value::Context(c.clone())],
@@ -1146,11 +1456,10 @@ fn dispatch(name: &str, sig: usize, a: &[Option<Value>], scope: &Rc<Scope>) -> O
             }
             Some(Value::context(out))
         }
-        "range" => {
+        B::Range => {
             let s = string(&a[0])?;
             parse_range_string(s, scope)
         }
-        _ => None,
     }
 }
 

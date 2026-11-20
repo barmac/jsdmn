@@ -54,19 +54,24 @@ pub struct Model {
     pub imports: Vec<RawImport>,
     pub types: HashMap<String, Rc<DmnType>>,
     pub elements: Vec<Element>,
+    /// Element index by (normalized) name; the first element wins.
+    by_name: FxHashMap<Rc<str>, usize>,
 }
 
 impl Model {
     pub fn find(&self, name: &str) -> Option<usize> {
+        if let Some(&i) = self.by_name.get(name) {
+            return Some(i);
+        }
         let n = normalize_name(name);
-        self.elements.iter().position(|e| *e.name == *n)
+        self.by_name.get(n.as_str()).copied()
     }
 }
 
 struct ModelEnv<'a> {
-    names: &'a HashSet<String>,
+    names: &'a FxHashSet<String>,
     /// First words of known names made of several tokens.
-    multi: &'a HashSet<String>,
+    multi: &'a FxHashSet<String>,
     types: &'a HashMap<String, Rc<DmnType>>,
 }
 
@@ -88,7 +93,7 @@ impl ParseEnv for ModelEnv<'_> {
     }
 }
 
-fn collect_names_expr(e: &RawExpr, out: &mut HashSet<String>) {
+fn collect_names_expr(e: &RawExpr, out: &mut FxHashSet<String>) {
     match &e.kind {
         RawExprKind::Context(entries) => {
             for ce in entries {
@@ -164,7 +169,7 @@ fn collect_names_expr(e: &RawExpr, out: &mut HashSet<String>) {
     }
 }
 
-fn collect_names_item(i: &RawItemDef, out: &mut HashSet<String>) {
+fn collect_names_item(i: &RawItemDef, out: &mut FxHashSet<String>) {
     out.insert(normalize_name(&i.name));
     for c in &i.components {
         collect_names_item(c, out);
@@ -176,7 +181,7 @@ fn collect_names_item(i: &RawItemDef, out: &mut HashSet<String>) {
     }
 }
 
-fn collect_names(d: &RawDefinitions, out: &mut HashSet<String>) {
+fn collect_names(d: &RawDefinitions, out: &mut FxHashSet<String>) {
     for i in &d.item_defs {
         collect_names_item(i, out);
     }
@@ -452,7 +457,7 @@ fn build_item_type(
     item: &RawItemDef,
     named: &Rc<NamedType>,
     env: &ModelEnv,
-    names: &HashSet<String>,
+    names: &FxHashSet<String>,
 ) {
     let base: Rc<DmnType> = if !item.components.is_empty() {
         let comps = item
@@ -531,11 +536,11 @@ fn split_href(h: &str) -> (&str, &str) {
 
 impl Engine {
     pub fn new(raws: Vec<RawDefinitions>) -> Engine {
-        let mut names = HashSet::new();
+        let mut names = FxHashSet::default();
         for r in &raws {
             collect_names(r, &mut names);
         }
-        let multi: HashSet<String> = names
+        let multi: FxHashSet<String> = names
             .iter()
             .filter_map(|n| {
                 let f = crate::feel::lexer::first_word(n);
@@ -677,12 +682,17 @@ impl Engine {
                 });
                 refs.push(rf);
             }
+            let mut by_name: FxHashMap<Rc<str>, usize> = FxHashMap::default();
+            for (i, e) in elements.iter().enumerate() {
+                by_name.entry(e.name.clone()).or_insert(i);
+            }
             models.push(Model {
                 name: r.name.clone(),
                 namespace: r.namespace.clone(),
                 imports: r.imports.clone(),
                 types: registries[mi].clone(),
                 elements,
+                by_name,
             });
             pending_refs.push(refs);
         }
@@ -852,12 +862,12 @@ impl Session {
     fn bind(&self, scope: &Rc<Scope>, from: usize, r: Ref, v: Value) {
         let name = self.models[r.model].elements[r.idx].name.clone();
         if r.model == from {
-            scope.set(&name, v);
+            scope.set_rc(&name, v);
             return;
         }
         let path = self.import_path(from, r.model).unwrap_or_default();
         if path.is_empty() {
-            scope.set(&name, v);
+            scope.set_rc(&name, v);
             return;
         }
         // nested contexts along the prefix path
@@ -922,7 +932,7 @@ impl Session {
         let model = self.models[m].clone();
         for (idx, el) in model.elements.iter().enumerate() {
             if let Some(v) = self.invocable_value(Ref { model: m, idx }, &scope) {
-                scope.set(&el.name, v);
+                scope.set_rc(&el.name, v);
             }
         }
         // imported invocables
@@ -963,11 +973,11 @@ impl Session {
                         result_type: None,
                     })
                 });
-                Some(Value::Function(Rc::new(Function::Closure(Closure {
+                Some(Value::Function(Rc::new(Function::Closure(Closure::new(
                     def,
-                    scope: scope.clone(),
-                    name: RefCell::new(Some(el.name.clone())),
-                }))))
+                    scope.clone(),
+                    Some(el.name.clone()),
+                )))))
             }
             ElementKind::Service { .. } => Some(Value::Function(Rc::new(Function::Native(
                 Rc::new(ServiceFn {
@@ -1024,7 +1034,7 @@ impl Session {
                 // inputs that do not correspond to any model element are free variables
                 for (m, name, v) in &self.free {
                     if *m == r.model {
-                        scope.set(name, v.clone());
+                        scope.set_rc(name, v.clone());
                     }
                 }
                 for req in info {

@@ -2,6 +2,10 @@
 //!
 //! Usage: `tck <path-to-tck/TestCases> [--filter <substring>] [--csv <file>] [--quiet]`
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use rsdmn::tck::run_all;
 use std::io::Write;
 use std::path::PathBuf;

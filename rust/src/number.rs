@@ -68,7 +68,18 @@ fn digits_u128(v: u128) -> u32 {
         let v = v as u64;
         return if v == 0 { 1 } else { v.ilog10() + 1 };
     }
-    v.ilog10() + 1
+    // log10 estimate from the bit length, corrected with the power table
+    let bits = 128 - v.leading_zeros();
+    let t = (bits * 1233) >> 12;
+    t + (v >= POW10[t as usize]) as u32
+}
+
+/// `v % 10` using 64 bit arithmetic (2^64 = 6 mod 10).
+#[inline]
+fn mod10_u128(v: u128) -> u32 {
+    let hi = (v >> 64) as u64;
+    let lo = v as u64;
+    (((hi % 10) * 6 + lo % 10) % 10) as u32
 }
 
 fn pow10_big(n: u64) -> BigInt {
@@ -242,7 +253,7 @@ impl Number {
             }
             mag = m as u128;
         } else {
-            while mag.is_multiple_of(10) {
+            while mod10_u128(mag) == 0 {
                 mag /= 10;
                 exp += 1;
             }
@@ -512,8 +523,26 @@ impl Number {
         {
             return Self::from_i128_exp(sum, lo.exp());
         }
-        let c1 = hi.to_big() * pow10_big(shift as u64);
-        Self::from_big(c1 + lo.to_big(), lo.exp(), false)
+        // Aligning overflows, so |hi| > 10^4 |lo|: keep three guard digits
+        // below hi's precision and fold the rest of lo into a sticky bit.
+        let e2 = a1 - (PRECISION as i64 + 2);
+        let hmag = hi.coef().unsigned_abs() * POW10[(hi.exp() - e2) as usize];
+        let k = (e2 - lo.exp()) as u64;
+        let lm = lo.coef().unsigned_abs();
+        let (lq, inexact) = if k > 38 {
+            (0, lm != 0)
+        } else {
+            let d = POW10[k as usize];
+            (lm / d, lm % d != 0)
+        };
+        let negative = hi.coef() < 0;
+        let mag = if negative == (lo.coef() < 0) {
+            hmag + lq
+        } else {
+            // the dropped digits make the true magnitude slightly smaller
+            hmag - lq - inexact as u128
+        };
+        Self::from_mag(mag, negative, e2, inexact)
     }
 
     #[inline]
@@ -541,11 +570,21 @@ impl Number {
         if hi == 0 {
             return Self::from_mag(lo, negative, exp, false);
         }
-        let mut big: BigInt = (BigInt::from(hi) << 128usize) + BigInt::from(lo);
-        if negative {
-            big = -big;
+        // lower bound of the digit count; reduce to 35 or 36 digits
+        let bits = 256 - hi.leading_zeros();
+        let est = ((bits - 1) as f64 * std::f64::consts::LOG10_2 - 1e-9).floor() as u32 + 1;
+        let k = est - (PRECISION + 1);
+        let mut limbs = [lo as u64, (lo >> 64) as u64, hi as u64, (hi >> 64) as u64];
+        let mut sticky = false;
+        let mut left = k;
+        while left > 0 {
+            let step = left.min(19);
+            sticky |= div_limbs(&mut limbs, POW10[step as usize] as u64) != 0;
+            left -= step;
         }
-        Self::from_big(big, exp, false)
+        debug_assert!(limbs[2] == 0 && limbs[3] == 0);
+        let q = ((limbs[1] as u128) << 64) | limbs[0] as u128;
+        Self::from_mag(q, negative, exp + k as i64, sticky)
     }
 
     pub fn div(&self, other: &Number) -> Option<Number> {
@@ -624,6 +663,17 @@ impl Number {
         if self.exp() == other.exp() {
             return self.coef().cmp(&other.coef());
         }
+        // align by scaling the operand with the larger exponent when it fits
+        let d = self.exp() - other.exp();
+        if (1..=38).contains(&d) {
+            if let Some(c1) = self.coef().checked_mul(POW10[d as usize] as i128) {
+                return c1.cmp(&other.coef());
+            }
+        } else if (-38..0).contains(&d)
+            && let Some(c2) = other.coef().checked_mul(POW10[(-d) as usize] as i128)
+        {
+            return self.coef().cmp(&c2);
+        }
         let a1 = self.adjusted();
         let a2 = other.adjusted();
         if a1 != a2 {
@@ -678,6 +728,9 @@ impl Number {
             {
                 break 'pos Self::from_i128_exp(c, self.exp() * mag as i64);
             }
+            if let Some(r) = self.pow_fast(mag) {
+                break 'pos r;
+            }
             if self.digits() as u64 * mag <= 400 {
                 let c = num_traits::pow(self.to_big(), mag as usize);
                 break 'pos Self::from_big(c, self.exp() * mag as i64, false);
@@ -708,6 +761,121 @@ impl Number {
         } else {
             Some(pos)
         }
+    }
+
+    /// Integer power computed with ~57 digit (192 bit) mantissas and a
+    /// rigorous error bound; `None` when correct rounding cannot be guaranteed.
+    fn pow_fast(&self, n: u64) -> Option<Number> {
+        // (mantissa limbs, decimal exponent, relative error bound)
+        type Approx = ([u64; 3], i64, f64);
+        fn mul(a: &Approx, b: &Approx) -> Option<Approx> {
+            let mut p = [0u64; 6];
+            for i in 0..3 {
+                let mut carry: u128 = 0;
+                for j in 0..3 {
+                    let t = a.0[i] as u128 * b.0[j] as u128 + p[i + j] as u128 + carry;
+                    p[i + j] = t as u64;
+                    carry = t >> 64;
+                }
+                p[i + 3] = carry as u64;
+            }
+            let mut r = a.2 + b.2 + a.2 * b.2;
+            let mut exp = a.1 + b.1;
+            let bits = limbs_bits(&p);
+            // keep at most 56-57 digits (< 10^57 < 2^192)
+            let est =
+                ((bits.max(1) - 1) as f64 * std::f64::consts::LOG10_2 - 1e-9).floor() as u32 + 1;
+            if est > 56 {
+                let k = est - 56;
+                let mut inexact = false;
+                let mut left = k;
+                while left > 0 {
+                    let step = left.min(19);
+                    inexact |= limbs_div_small(&mut p, POW10[step as usize] as u64) != 0;
+                    left -= step;
+                }
+                exp += k as i64;
+                if inexact {
+                    r += 1.0 / limbs_f64(&p);
+                }
+            }
+            if p[3] != 0 || p[4] != 0 || p[5] != 0 {
+                return None;
+            }
+            Some(([p[0], p[1], p[2]], exp, r))
+        }
+        let negative = self.coef() < 0 && n % 2 == 1;
+        let c = self.coef().unsigned_abs();
+        let mut result: Approx = ([1, 0, 0], 0, 0.0);
+        let mut base: Approx = ([c as u64, (c >> 64) as u64, 0], self.exp(), 0.0);
+        let mut e = n;
+        loop {
+            if e & 1 == 1 {
+                result = mul(&result, &base)?;
+            }
+            e >>= 1;
+            if e == 0 {
+                break;
+            }
+            base = mul(&base, &base)?;
+        }
+        let (mut m, exp, r) = result;
+        let mut limbs6 = [m[0], m[1], m[2], 0, 0, 0];
+        let bits = limbs_bits(&limbs6);
+        let d = ((bits.max(1) - 1) as f64 * std::f64::consts::LOG10_2 - 1e-9).floor() as u32 + 1;
+        if d <= PRECISION + 1 {
+            // small enough to be held exactly in 128 bits
+            if m[2] != 0 {
+                return None;
+            }
+            if r != 0.0 {
+                return None;
+            }
+            let v = ((m[1] as u128) << 64) | m[0] as u128;
+            return Some(Self::from_mag(v, negative, exp, false));
+        }
+        // split off k1 low digits so that a 35 or 36 digit quotient remains
+        let k1 = d - (PRECISION + 1);
+        let mut rem: u128 = 0;
+        let mut scale: u128 = 1;
+        let mut left = k1;
+        while left > 0 {
+            let step = left.min(19);
+            let rr = limbs_div_small(&mut limbs6, POW10[step as usize] as u64) as u128;
+            rem += rr * scale;
+            scale *= POW10[step as usize];
+            left -= step;
+        }
+        m = [limbs6[0], limbs6[1], limbs6[2]];
+        if m[2] != 0 {
+            return None;
+        }
+        let q = ((m[1] as u128) << 64) | m[0] as u128;
+        if r == 0.0 {
+            return Some(Self::from_mag(q, negative, exp + k1 as i64, rem != 0));
+        }
+        // the true value lies within `err` units (of the last kept digit of the
+        // full mantissa) of q * 10^k1 + rem; round only if that interval does
+        // not contain a rounding boundary of the final 34 digits
+        let full = (q as f64) * (scale as f64) + rem as f64;
+        let err = r * full * 1.01 + 2.0;
+        let dq = digits_u128(q);
+        let drop = dq - PRECISION; // 1 or 2 more digits to drop from q
+        let p = POW10[drop as usize];
+        let (q34, low) = (q / p, q % p);
+        let low_full = low * scale + rem; // remainder below the 34 digits
+        let half = (p / 2) * scale;
+        let diff = low_full.abs_diff(half);
+        if (diff as f64) <= err {
+            return None;
+        }
+        let q34 = if low_full > half { q34 + 1 } else { q34 };
+        Some(Self::from_mag(
+            q34,
+            negative,
+            exp + (k1 + drop) as i64,
+            false,
+        ))
     }
 
     pub fn sqrt(&self) -> Option<Number> {
@@ -779,6 +947,47 @@ impl Number {
         }
         s
     }
+}
+
+/// Number of significant bits of a little endian limb array.
+fn limbs_bits(l: &[u64]) -> u32 {
+    for i in (0..l.len()).rev() {
+        if l[i] != 0 {
+            return i as u32 * 64 + (64 - l[i].leading_zeros());
+        }
+    }
+    0
+}
+
+/// Approximate value of a little endian limb array.
+fn limbs_f64(l: &[u64]) -> f64 {
+    l.iter()
+        .rev()
+        .fold(0.0, |acc, &x| acc * 18446744073709551616.0 + x as f64)
+}
+
+/// Divide a little endian number by `d` in place, returning the remainder.
+fn limbs_div_small(l: &mut [u64], d: u64) -> u64 {
+    let d = d as u128;
+    let mut rem: u128 = 0;
+    for i in (0..l.len()).rev() {
+        let cur = (rem << 64) | l[i] as u128;
+        l[i] = (cur / d) as u64;
+        rem = cur % d;
+    }
+    rem as u64
+}
+
+/// Divide a little endian 256 bit number by `d` in place, returning the remainder.
+fn div_limbs(l: &mut [u64; 4], d: u64) -> u64 {
+    let d = d as u128;
+    let mut rem: u128 = 0;
+    for i in (0..4).rev() {
+        let cur = (rem << 64) | l[i] as u128;
+        l[i] = (cur / d) as u64;
+        rem = cur % d;
+    }
+    rem as u64
 }
 
 /// Full 128 x 128 -> 256 bit multiplication.
@@ -888,6 +1097,100 @@ mod tests {
         assert_eq!(n("0.1").cmp(&n("0.10")), Ordering::Equal);
         assert_eq!(n("1.5").cmp(&n("15")), Ordering::Less);
         assert_eq!(n("-1.5").cmp(&n("-15")), Ordering::Greater);
+    }
+
+    /// xorshift64* pseudo random numbers
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545F4914F6CDD1D)
+        }
+        fn number(&mut self) -> Number {
+            let digits = [1, 3, 10, 20, 30, 34, 34, 34][(self.next() % 8) as usize];
+            let mut c: i128 = 0;
+            for _ in 0..digits {
+                c = c * 10 + (self.next() % 10) as i128;
+            }
+            if self.next().is_multiple_of(2) {
+                c = -c;
+            }
+            let e = (self.next() % 81) as i64 - 40;
+            Number::from_i128_exp(c, e)
+        }
+    }
+
+    fn exact(a: &Number, b: &Number) -> (BigInt, BigInt, i64) {
+        let e = a.exp().min(b.exp());
+        (
+            a.to_big() * pow10_big((a.exp() - e) as u64),
+            b.to_big() * pow10_big((b.exp() - e) as u64),
+            e,
+        )
+    }
+
+    #[test]
+    fn fast_paths_match_exact_reference() {
+        let mut rng = Rng(0x9E3779B97F4A7C15);
+        for _ in 0..50_000 {
+            let a = rng.number();
+            let b = rng.number();
+            let (x, y, e) = exact(&a, &b);
+            assert_eq!(
+                a.add(&b),
+                Number::from_big(&x + &y, e, false),
+                "{} + {}",
+                a,
+                b
+            );
+            assert_eq!(
+                a.sub(&b),
+                Number::from_big(&x - &y, e, false),
+                "{} - {}",
+                a,
+                b
+            );
+            assert_eq!(
+                a.mul(&b),
+                Number::from_big(a.to_big() * b.to_big(), a.exp() + b.exp(), false),
+                "{} * {}",
+                a,
+                b
+            );
+            if !b.is_zero() {
+                // exact quotient digits plus sticky remainder
+                let num = a.to_big().abs() * pow10_big(80);
+                let den = b.to_big().abs();
+                let (q, r) = num.div_rem(&den);
+                let q = if a.is_negative() != b.is_negative() {
+                    -q
+                } else {
+                    q
+                };
+                let expected = Number::from_big(q, a.exp() - b.exp() - 80, !r.is_zero());
+                assert_eq!(a.div(&b).unwrap(), expected, "{} / {}", a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn powers_match_exact_reference() {
+        let mut rng = Rng(0xD1B54A32D192ED03);
+        for _ in 0..2_000 {
+            let mut a = rng.number();
+            if a.digits() > 10 {
+                a = a.round_scale(-(a.exp() + a.digits() as i64 - 8), Rounding::Down);
+            }
+            if a.is_zero() {
+                continue;
+            }
+            let n = (rng.next() % 400) as i64;
+            let expected =
+                Number::from_big(num_traits::pow(a.to_big(), n as usize), a.exp() * n, false);
+            assert_eq!(a.pow_int(n).unwrap(), expected, "{} ** {}", a, n);
+        }
     }
 
     #[test]

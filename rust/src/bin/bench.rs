@@ -2,6 +2,10 @@
 //!
 //! Usage: `bench [path-to-tck/TestCases] [--filter <name>]`
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use rsdmn::Engine;
 use rsdmn::tck::{compile_suite, load_all, run_suite};
 use rsdmn::value::{Context, Value};

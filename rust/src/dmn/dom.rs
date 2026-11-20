@@ -7,7 +7,7 @@
 //! ignored, and subtrees of elements listed in `skip` (e.g. diagram
 //! interchange) are skipped without building nodes.
 
-use memchr::{memchr, memmem};
+use memchr::{memchr, memchr2, memchr3, memmem};
 use std::borrow::Cow;
 
 /// An element borrowing names and (entity free) values from the source text.
@@ -30,10 +30,7 @@ impl Element<'_> {
 
 /// Decode `raw`, borrowing it when no decoding is necessary.
 fn decode_cow(raw: &str, attr: bool) -> Result<Cow<'_, str>, String> {
-    let needs = raw
-        .bytes()
-        .any(|c| c == b'&' || c == b'\r' || (attr && (c == b'\n' || c == b'\t')));
-    if !needs {
+    if !needs_decoding(raw, attr) {
         return Ok(Cow::Borrowed(raw));
     }
     let mut out = String::with_capacity(raw.len());
@@ -66,10 +63,22 @@ struct Parser<'a> {
     pos: usize,
 }
 
+#[inline]
 fn local(name: &str) -> &str {
-    match name.rfind(':') {
+    match name.as_bytes().iter().rposition(|&c| c == b':') {
         Some(i) => &name[i + 1..],
         None => name,
+    }
+}
+
+/// Does `raw` contain characters that require decoding?
+#[inline]
+fn needs_decoding(raw: &str, attr: bool) -> bool {
+    let b = raw.as_bytes();
+    if attr {
+        memchr3(b'&', b'\r', b'\n', b).is_some() || memchr(b'\t', b).is_some()
+    } else {
+        memchr2(b'&', b'\r', b).is_some()
     }
 }
 
@@ -84,10 +93,7 @@ fn is_name_end(c: u8) -> bool {
 /// Decode entities and normalize line ends; `attr` also normalizes whitespace.
 fn decode(raw: &str, attr: bool, out: &mut String) -> Result<(), String> {
     let bytes = raw.as_bytes();
-    if !bytes
-        .iter()
-        .any(|&c| c == b'&' || c == b'\r' || (attr && (c == b'\n' || c == b'\t')))
-    {
+    if !needs_decoding(raw, attr) {
         out.push_str(raw);
         return Ok(());
     }
@@ -251,7 +257,48 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Skip to after the end tag of the element `qname` whose start tag was
+    /// just read, by searching for its (nested) start and end tags.
+    fn skip_to_end_tag(&mut self, qname: &str) -> Result<(), String> {
+        let finder = memmem::Finder::new(qname.as_bytes());
+        let mut depth = 1;
+        let mut from = self.pos;
+        while depth > 0 {
+            let i = match finder.find(&self.b[from..]) {
+                Some(i) => from + i,
+                None => return self.err("unterminated element"),
+            };
+            let after = self.b.get(i + qname.len()).copied().unwrap_or(b'>');
+            let delimited = is_ws(after) || after == b'>' || after == b'/';
+            from = i + qname.len();
+            if !delimited {
+                continue;
+            }
+            if i >= 2 && &self.b[i - 2..i] == b"</" {
+                depth -= 1;
+                if depth == 0 {
+                    self.pos = from;
+                    self.skip_ws();
+                    if self.b.get(self.pos) != Some(&b'>') {
+                        return self.err("expected '>'");
+                    }
+                    self.pos += 1;
+                    return Ok(());
+                }
+            } else if i >= 1 && self.b[i - 1] == b'<' {
+                // a nested element with the same name (unless self-closing)
+                self.pos = from;
+                if !self.attributes(None)? {
+                    depth += 1;
+                }
+                from = self.pos;
+            }
+        }
+        Ok(())
+    }
+
     /// Skip the content of an element whose start tag was just read.
+    #[allow(dead_code)]
     fn skip_element(&mut self) -> Result<(), String> {
         let mut depth = 1;
         while depth > 0 {
@@ -333,7 +380,8 @@ impl<'a> Parser<'a> {
                 }
             } else {
                 self.pos += 1;
-                let name = local(self.name());
+                let qname = self.name();
+                let name = local(qname);
                 if name.is_empty() {
                     return self.err("expected element name");
                 }
@@ -342,7 +390,7 @@ impl<'a> Parser<'a> {
                 }
                 if !stack.is_empty() && skip.contains(&name) {
                     if !self.attributes(None)? {
-                        self.skip_element()?;
+                        self.skip_to_end_tag(qname)?;
                     }
                     continue;
                 }

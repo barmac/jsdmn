@@ -1,34 +1,39 @@
 //! FEEL tokenizer.
+//!
+//! Tokens borrow their text from the source; only string literals containing
+//! escape sequences allocate.
+
+use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Tok {
+pub enum Tok<'a> {
     /// Name-like word (identifiers and keywords).
-    Name(String),
-    Number(String),
-    Str(String),
+    Name(&'a str),
+    Number(&'a str),
+    Str(Cow<'a, str>),
     /// `@"..."` literal.
-    At(String),
+    At(Cow<'a, str>),
     Punct(&'static str),
     Eof,
 }
 
 #[derive(Clone, Debug)]
-pub struct Token {
-    pub tok: Tok,
+pub struct Token<'a> {
+    pub tok: Tok<'a>,
     pub start: usize,
     pub end: usize,
 }
 
-impl Token {
+impl<'a> Token<'a> {
     pub fn is_punct(&self, p: &str) -> bool {
         matches!(&self.tok, Tok::Punct(q) if *q == p)
     }
 
     pub fn is_name(&self, n: &str) -> bool {
-        matches!(&self.tok, Tok::Name(q) if q == n)
+        matches!(&self.tok, Tok::Name(q) if *q == n)
     }
 
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&'a str> {
         match &self.tok {
             Tok::Name(n) => Some(n),
             _ => None,
@@ -62,24 +67,58 @@ fn is_name_part(c: char) -> bool {
 #[derive(Debug, Clone)]
 pub struct LexError(pub String);
 
-fn parse_string_body(chars: &[(usize, char)], i: &mut usize) -> Result<String, LexError> {
-    // assumes chars[*i] is the opening quote
-    *i += 1;
-    let mut s = String::new();
+/// Character at byte offset `i` and its encoded length.
+#[inline]
+fn char_at(src: &str, i: usize) -> (char, usize) {
+    let b = src.as_bytes()[i];
+    if b < 0x80 {
+        (b as char, 1)
+    } else {
+        let c = src[i..].chars().next().unwrap();
+        (c, c.len_utf8())
+    }
+}
+
+fn hex_digits(src: &str, i: usize, n: usize) -> Result<u32, LexError> {
+    let h = src
+        .get(i..i + n)
+        .ok_or_else(|| LexError("bad unicode escape".into()))?;
+    if !h.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err(LexError("bad unicode escape".into()));
+    }
+    u32::from_str_radix(h, 16).map_err(|_| LexError("bad unicode escape".into()))
+}
+
+/// Parse a string literal whose opening quote is at byte `q`; returns the
+/// content and the offset after the closing quote.
+fn parse_string(src: &str, q: usize) -> Result<(Cow<'_, str>, usize), LexError> {
+    let b = src.as_bytes();
+    let start = q + 1;
+    let mut i = start;
+    // fast path: no escapes
+    while i < b.len() && b[i] != b'"' && b[i] != b'\\' {
+        i += 1;
+    }
+    if i >= b.len() {
+        return Err(LexError("unterminated string".into()));
+    }
+    if b[i] == b'"' {
+        return Ok((Cow::Borrowed(&src[start..i]), i + 1));
+    }
+    let mut s = String::from(&src[start..i]);
     loop {
-        if *i >= chars.len() {
+        if i >= b.len() {
             return Err(LexError("unterminated string".into()));
         }
-        let c = chars[*i].1;
-        *i += 1;
-        match c {
-            '"' => break,
-            '\\' => {
-                if *i >= chars.len() {
+        match b[i] {
+            b'"' => return Ok((Cow::Owned(s), i + 1)),
+            b'\\' => {
+                i += 1;
+                if i >= b.len() {
                     return Err(LexError("bad escape".into()));
                 }
-                let e = chars[*i].1;
-                *i += 1;
+                let (e, elen) = char_at(src, i);
+                i += elen;
                 match e {
                     'n' => s.push('\n'),
                     'r' => s.push('\r'),
@@ -90,32 +129,21 @@ fn parse_string_body(chars: &[(usize, char)], i: &mut usize) -> Result<String, L
                     '\'' => s.push('\''),
                     '\\' => s.push('\\'),
                     'u' => {
-                        let hex: String = chars[*i..].iter().take(4).map(|(_, c)| *c).collect();
-                        if hex.len() != 4 {
-                            return Err(LexError("bad unicode escape".into()));
-                        }
-                        *i += 4;
-                        let code = u32::from_str_radix(&hex, 16)
-                            .map_err(|_| LexError("bad unicode escape".into()))?;
+                        let code = hex_digits(src, i, 4)?;
+                        i += 4;
                         if (0xD800..0xDC00).contains(&code) {
                             // surrogate pair
-                            if *i + 6 <= chars.len()
-                                && chars[*i].1 == '\\'
-                                && chars[*i + 1].1 == 'u'
+                            if src.get(i..i + 2) == Some("\\u")
+                                && let Ok(low) = hex_digits(src, i + 2, 4)
+                                && (0xDC00..0xE000).contains(&low)
                             {
-                                let hex2: String =
-                                    chars[*i + 2..*i + 6].iter().map(|(_, c)| *c).collect();
-                                let low = u32::from_str_radix(&hex2, 16)
-                                    .map_err(|_| LexError("bad unicode escape".into()))?;
-                                if (0xDC00..0xE000).contains(&low) {
-                                    *i += 6;
-                                    let cp = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
-                                    s.push(
-                                        char::from_u32(cp)
-                                            .ok_or_else(|| LexError("bad code point".into()))?,
-                                    );
-                                    continue;
-                                }
+                                i += 6;
+                                let cp = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                                s.push(
+                                    char::from_u32(cp)
+                                        .ok_or_else(|| LexError("bad code point".into()))?,
+                                );
+                                continue;
                             }
                             return Err(LexError("lone surrogate".into()));
                         }
@@ -125,13 +153,8 @@ fn parse_string_body(chars: &[(usize, char)], i: &mut usize) -> Result<String, L
                         );
                     }
                     'U' => {
-                        let hex: String = chars[*i..].iter().take(6).map(|(_, c)| *c).collect();
-                        if hex.len() != 6 {
-                            return Err(LexError("bad unicode escape".into()));
-                        }
-                        *i += 6;
-                        let code = u32::from_str_radix(&hex, 16)
-                            .map_err(|_| LexError("bad unicode escape".into()))?;
+                        let code = hex_digits(src, i, 6)?;
+                        i += 6;
                         s.push(
                             char::from_u32(code)
                                 .ok_or_else(|| LexError("bad code point".into()))?,
@@ -144,57 +167,60 @@ fn parse_string_body(chars: &[(usize, char)], i: &mut usize) -> Result<String, L
                     }
                 }
             }
-            c => s.push(c),
+            _ => {
+                let (c, clen) = char_at(src, i);
+                s.push(c);
+                i += clen;
+            }
         }
     }
-    Ok(s)
 }
 
-pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
-    let chars: Vec<(usize, char)> = src.char_indices().collect();
-    let n = chars.len();
-    let pos = |i: usize| if i < n { chars[i].0 } else { src.len() };
-    let mut toks: Vec<Token> = Vec::new();
+pub fn tokenize(src: &str) -> Result<Vec<Token<'_>>, LexError> {
+    let b = src.as_bytes();
+    let n = b.len();
+    let mut toks: Vec<Token> = Vec::with_capacity(n / 4 + 2);
     let mut i = 0;
     while i < n {
-        let c = chars[i].1;
+        let (c, clen) = char_at(src, i);
         if is_whitespace(c) {
-            i += 1;
+            i += clen;
             continue;
         }
-        let start = pos(i);
+        let start = i;
+        let next = b.get(i + 1).copied().unwrap_or(0);
         // comments
-        if c == '/' && i + 1 < n && chars[i + 1].1 == '/' {
-            while i < n && chars[i].1 != '\n' {
+        if c == '/' && next == b'/' {
+            while i < n && b[i] != b'\n' {
                 i += 1;
             }
             continue;
         }
-        if c == '/' && i + 1 < n && chars[i + 1].1 == '*' {
-            i += 2;
-            while i + 1 < n && !(chars[i].1 == '*' && chars[i + 1].1 == '/') {
-                i += 1;
-            }
-            i += 2;
+        if c == '/' && next == b'*' {
+            i = match src[i + 2..].find("*/") {
+                Some(p) => i + 2 + p + 2,
+                None => n,
+            };
             continue;
         }
         if c == '"' {
-            let s = parse_string_body(&chars, &mut i)?;
+            let (s, end) = parse_string(src, i)?;
             toks.push(Token {
                 tok: Tok::Str(s),
                 start,
-                end: pos(i),
+                end,
             });
+            i = end;
             continue;
         }
-        if c == '@' && i + 1 < n && chars[i + 1].1 == '"' {
-            i += 1;
-            let s = parse_string_body(&chars, &mut i)?;
+        if c == '@' && next == b'"' {
+            let (s, end) = parse_string(src, i + 1)?;
             toks.push(Token {
                 tok: Tok::At(s),
                 start,
-                end: pos(i),
+                end,
             });
+            i = end;
             continue;
         }
         let prev_is_value = matches!(
@@ -207,72 +233,58 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
                 | Some(Tok::Punct("]"))
                 | Some(Tok::Punct("}"))
         );
-        let starts_number = c.is_ascii_digit()
-            || (c == '.' && i + 1 < n && chars[i + 1].1.is_ascii_digit() && !prev_is_value);
+        let starts_number =
+            c.is_ascii_digit() || (c == '.' && next.is_ascii_digit() && !prev_is_value);
         if starts_number {
-            let mut s = String::new();
-            while i < n && chars[i].1.is_ascii_digit() {
-                s.push(chars[i].1);
-                i += 1;
+            let mut j = i;
+            while j < n && b[j].is_ascii_digit() {
+                j += 1;
             }
-            if i + 1 < n && chars[i].1 == '.' && chars[i + 1].1.is_ascii_digit() {
-                s.push('.');
-                i += 1;
-                while i < n && chars[i].1.is_ascii_digit() {
-                    s.push(chars[i].1);
-                    i += 1;
-                }
-            } else if i < n && chars[i].1 == '.' && s.is_empty() {
-                // leading dot handled above
-            }
-            if s.is_empty() && i < n && chars[i].1 == '.' {
-                s.push('0');
-                s.push('.');
-                i += 1;
-                while i < n && chars[i].1.is_ascii_digit() {
-                    s.push(chars[i].1);
-                    i += 1;
+            if j + 1 < n && b[j] == b'.' && b[j + 1].is_ascii_digit() {
+                j += 1;
+                while j < n && b[j].is_ascii_digit() {
+                    j += 1;
                 }
             }
             // exponent
-            if i < n && (chars[i].1 == 'e' || chars[i].1 == 'E') {
-                let mut j = i + 1;
-                if j < n && (chars[j].1 == '+' || chars[j].1 == '-') {
-                    j += 1;
+            if j < n && (b[j] == b'e' || b[j] == b'E') {
+                let mut k = j + 1;
+                if k < n && (b[k] == b'+' || b[k] == b'-') {
+                    k += 1;
                 }
-                if j < n && chars[j].1.is_ascii_digit() {
-                    s.push('e');
-                    if chars[i + 1].1 == '-' {
-                        s.push('-');
+                if k < n && b[k].is_ascii_digit() {
+                    while k < n && b[k].is_ascii_digit() {
+                        k += 1;
                     }
-                    i = j;
-                    while i < n && chars[i].1.is_ascii_digit() {
-                        s.push(chars[i].1);
-                        i += 1;
-                    }
+                    j = k;
                 }
             }
             toks.push(Token {
-                tok: Tok::Number(s),
+                tok: Tok::Number(&src[i..j]),
                 start,
-                end: pos(i),
+                end: j,
             });
+            i = j;
             continue;
         }
         if is_name_start(c) {
-            let mut s = String::new();
-            while i < n && is_name_part(chars[i].1) {
-                s.push(chars[i].1);
-                i += 1;
+            let mut j = i + clen;
+            while j < n {
+                let (d, dlen) = char_at(src, j);
+                if !is_name_part(d) {
+                    break;
+                }
+                j += dlen;
             }
             toks.push(Token {
-                tok: Tok::Name(s),
+                tok: Tok::Name(&src[i..j]),
                 start,
-                end: pos(i),
+                end: j,
             });
+            i = j;
             continue;
         }
-        let next = if i + 1 < n { chars[i + 1].1 } else { '\0' };
+        let next = next as char;
         let (p, len): (&'static str, usize) = match (c, next) {
             ('.', '.') => ("..", 2),
             ('*', '*') => ("**", 2),
@@ -302,19 +314,19 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
         toks.push(Token {
             tok: Tok::Punct(p),
             start,
-            end: pos(i),
+            end: i,
         });
     }
     toks.push(Token {
         tok: Tok::Eof,
-        start: src.len(),
-        end: src.len(),
+        start: n,
+        end: n,
     });
     Ok(toks)
 }
 
 /// Is `s` already normalized (ASCII, single inner spaces, no other whitespace)?
-fn is_normalized(s: &str) -> bool {
+pub fn is_normalized(s: &str) -> bool {
     let b = s.as_bytes();
     if b.is_empty() || b[0] == b' ' || b[b.len() - 1] == b' ' {
         return b.is_empty();

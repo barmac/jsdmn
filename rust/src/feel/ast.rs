@@ -45,6 +45,8 @@ pub enum Expr {
     UnaryRange(CmpOp, Box<Expr>),
     FunctionDef(Rc<FunctionDef>),
     Call(Box<Expr>, Args),
+    /// Call of a built-in function resolved at compile time.
+    Builtin(crate::feel::builtins::B, Args),
     Path(Box<Expr>, Rc<str>),
     Filter(Box<Expr>, Box<Expr>),
     /// Boxed decision table.
@@ -140,6 +142,10 @@ impl Expr {
             Context(c) => c.iter().any(|e| e.expr.uses_name(n)),
             Range { start, end, .. } => start.uses_name(n) || end.uses_name(n),
             FunctionDef(f) => f.body.uses_name(n),
+            Builtin(_, args) => match args {
+                Args::Positional(a) => a.iter().any(|e| e.uses_name(n)),
+                Args::Named(a) => a.iter().any(|(_, e)| e.uses_name(n)),
+            },
             Call(f, args) => {
                 f.uses_name(n)
                     || match args {

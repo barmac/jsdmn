@@ -77,6 +77,29 @@ impl Scope {
         })
     }
 
+    /// Define (or redefine) a variable, reusing an existing name allocation.
+    pub fn set_rc(&self, name: &Rc<str>, v: Value) {
+        match &self.frame {
+            Frame::Vars(vars) => {
+                let mut vars = vars.borrow_mut();
+                if let Some(e) = vars.iter_mut().find(|(k, _)| **k == **name) {
+                    e.1 = v;
+                } else {
+                    vars.push((name.clone(), v));
+                }
+            }
+            _ => panic!("cannot define variables in a single-variable scope"),
+        }
+    }
+
+    /// Child scope with the given variables (names must be distinct).
+    pub fn with_vars(parent: &Rc<Scope>, vars: Vec<(Rc<str>, Value)>) -> Rc<Scope> {
+        Rc::new(Scope {
+            frame: Frame::Vars(RefCell::new(vars)),
+            parent: Some(parent.clone()),
+        })
+    }
+
     /// Define (or redefine) a variable; only valid on scopes created by `root` / `child`.
     pub fn set(&self, name: &str, v: Value) {
         match &self.frame {
@@ -140,10 +163,37 @@ pub struct Closure {
     pub scope: Rc<Scope>,
     /// Name the function is bound to (for recursion).
     pub name: RefCell<Option<Rc<str>>>,
+    /// Cached decision whether invocations must bind `name` themselves
+    /// (0 = unknown, 1 = no, 2 = yes).
+    pub self_bind: std::cell::Cell<u8>,
+}
+
+impl Closure {
+    pub fn new(def: Rc<FunctionDef>, scope: Rc<Scope>, name: Option<Rc<str>>) -> Closure {
+        Closure {
+            def,
+            scope,
+            name: RefCell::new(name),
+            self_bind: std::cell::Cell::new(0),
+        }
+    }
+
+    fn needs_self_binding(&self) -> Option<Rc<str>> {
+        let name = self.name.borrow().clone()?;
+        match self.self_bind.get() {
+            1 => None,
+            2 => Some(name),
+            _ => {
+                let needed = self.scope.lookup(&name).is_none();
+                self.self_bind.set(if needed { 2 } else { 1 });
+                needed.then_some(name)
+            }
+        }
+    }
 }
 
 pub enum Function {
-    Builtin(Rc<str>),
+    Builtin(builtins::B),
     Closure(Closure),
     Native(Rc<dyn NativeFunction>),
 }
@@ -268,12 +318,13 @@ pub fn eval(e: &Expr, scope: &Rc<Scope>) -> Value {
             }
             Value::Range(Rc::new(Range::from_unary(*op, v)))
         }
-        Expr::FunctionDef(def) => Value::Function(Rc::new(Function::Closure(Closure {
-            def: def.clone(),
-            scope: scope.clone(),
-            name: RefCell::new(None),
-        }))),
+        Expr::FunctionDef(def) => Value::Function(Rc::new(Function::Closure(Closure::new(
+            def.clone(),
+            scope.clone(),
+            None,
+        )))),
         Expr::Call(f, args) => eval_call(f, args, scope),
+        Expr::Builtin(b, args) => builtins::call_builtin_id(*b, eval_args(args, scope), scope),
         Expr::Path(base, name) => {
             let b = eval(base, scope);
             path(&b, name)
@@ -380,8 +431,8 @@ fn lookup_name(n: &str, scope: &Rc<Scope>) -> Value {
     if let Some(v) = scope.lookup(n) {
         return v;
     }
-    if builtins::is_builtin_name(n) {
-        return Value::Function(Rc::new(Function::Builtin(Rc::from(n))));
+    if let Some(b) = builtins::B::from_name(n) {
+        return Value::Function(Rc::new(Function::Builtin(b)));
     }
     // a name containing dots that is not in scope: interpret as a path
     if n.contains('.') {
@@ -450,8 +501,9 @@ fn eval_context(entries: &[ContextEntry], scope: &Rc<Scope>) -> Value {
                     && c.name.borrow().is_none()
                 {
                     *c.name.borrow_mut() = Some(name.clone());
+                    c.self_bind.set(0);
                 }
-                local.set(name, v.clone());
+                local.set_rc(name, v.clone());
                 ctx.put(name.clone(), v);
             }
             None => return v,
@@ -688,9 +740,9 @@ fn eval_call(f: &Expr, args: &Args, scope: &Rc<Scope>) -> Value {
         Expr::Name(n) => match scope.lookup(n) {
             Some(v) => v,
             None => {
-                if builtins::is_builtin_name(n) {
+                if let Some(b) = builtins::B::from_name(n) {
                     let a = eval_args(args, scope);
-                    return builtins::call_builtin(n, a, scope);
+                    return builtins::call_builtin_id(b, a, scope);
                 }
                 return Value::Null;
             }
@@ -707,7 +759,7 @@ fn eval_call(f: &Expr, args: &Args, scope: &Rc<Scope>) -> Value {
 /// Invoke a function value.
 pub fn invoke(f: &Rc<Function>, args: CallArgs, scope: &Rc<Scope>) -> Value {
     match &**f {
-        Function::Builtin(name) => builtins::call_builtin(name, args, scope),
+        Function::Builtin(b) => builtins::call_builtin_id(*b, args, scope),
         Function::Closure(c) => {
             let params = &c.def.params;
             let values: Vec<Value> = match args {
@@ -728,11 +780,10 @@ pub fn invoke(f: &Rc<Function>, args: CallArgs, scope: &Rc<Scope>) -> Value {
                     vals
                 }
             };
-            let s = Scope::child(&c.scope);
-            if let Some(name) = c.name.borrow().as_ref()
-                && c.scope.lookup(name).is_none()
-            {
-                s.set(name, Value::Function(f.clone()));
+            let mut vars: Vec<(Rc<str>, Value)> = Vec::with_capacity(params.len() + 1);
+            // the function's own name first, so that parameters shadow it
+            if let Some(name) = c.needs_self_binding() {
+                vars.push((name, Value::Function(f.clone())));
             }
             for ((p, ty), v) in params.iter().zip(values) {
                 let v = match ty {
@@ -749,8 +800,9 @@ pub fn invoke(f: &Rc<Function>, args: CallArgs, scope: &Rc<Scope>) -> Value {
                     }
                     None => v,
                 };
-                s.set(p, v);
+                vars.push((p.clone(), v));
             }
+            let s = Scope::with_vars(&c.scope, vars);
             let r = match c.def.kind {
                 FnKind::Feel => eval(&c.def.body, &s),
                 FnKind::External => {
@@ -1118,25 +1170,40 @@ fn test_one(t: &UnaryTest, x: &Value, scope: &Rc<Scope>) -> Option<bool> {
     match t {
         UnaryTest::Any => Some(true),
         UnaryTest::Cmp(op, e) => {
-            let v = eval(e, scope);
-            match compare(*op, x, &v) {
+            // borrow constant operands instead of cloning them
+            let owned;
+            let v = match e {
+                Expr::Const(c) => c,
+                _ => {
+                    owned = eval(e, scope);
+                    &owned
+                }
+            };
+            match compare(*op, x, v) {
                 Value::Bool(b) => Some(b),
                 _ => None,
             }
         }
         UnaryTest::Expr { expr, uses_qmark } => {
-            let v = eval(expr, scope);
+            let owned;
+            let v = match expr {
+                Expr::Const(c) => c,
+                _ => {
+                    owned = eval(expr, scope);
+                    &owned
+                }
+            };
             if *uses_qmark {
                 return match v {
-                    Value::Bool(b) => Some(b),
+                    Value::Bool(b) => Some(*b),
                     _ => None,
                 };
             }
-            match &v {
+            match v {
                 Value::Bool(true) if !matches!(x, Value::Bool(_)) => Some(true),
                 Value::List(l) => {
                     if let Value::List(_) = x
-                        && feel_eq(x, &v) == Some(true)
+                        && feel_eq(x, v) == Some(true)
                     {
                         return Some(true);
                     }
@@ -1152,7 +1219,7 @@ fn test_one(t: &UnaryTest, x: &Value, scope: &Rc<Scope>) -> Option<bool> {
                     Some(false)
                 }
                 Value::Range(r) => r.contains(x),
-                _ => feel_eq(x, &v),
+                _ => feel_eq(x, v),
             }
         }
     }

@@ -81,10 +81,12 @@ const STOP_WORDS: &[&str] = &[
 
 struct Parser<'a> {
     src: &'a str,
-    toks: Vec<Token>,
+    toks: Vec<Token<'a>>,
     pos: usize,
     env: &'a dyn ParseEnv,
     locals: Vec<String>,
+    /// Memoized `known_match_len` result: (position, length, locals count).
+    known_memo: std::cell::Cell<(usize, usize, usize)>,
 }
 
 fn cmp_op(t: &Token) -> Option<CmpOp> {
@@ -124,14 +126,15 @@ impl<'a> Parser<'a> {
             pos: 0,
             env,
             locals: Vec::new(),
+            known_memo: std::cell::Cell::new((usize::MAX, 0, 0)),
         })
     }
 
-    fn peek(&self) -> &Token {
+    fn peek(&self) -> &Token<'a> {
         &self.toks[self.pos]
     }
 
-    fn peek_at(&self, i: usize) -> &Token {
+    fn peek_at(&self, i: usize) -> &Token<'a> {
         let i = (self.pos + i).min(self.toks.len() - 1);
         &self.toks[i]
     }
@@ -196,6 +199,17 @@ impl<'a> Parser<'a> {
         normalize_name(&self.src[self.toks[from].start..self.toks[to].end])
     }
 
+    /// Like `slice`, but borrows the source when it is already normalized.
+    fn slice_cow(&self, from: usize, to: usize) -> std::borrow::Cow<'a, str> {
+        let src: &'a str = self.src;
+        let raw = &src[self.toks[from].start..self.toks[to].end];
+        if super::lexer::is_normalized(raw) {
+            std::borrow::Cow::Borrowed(raw)
+        } else {
+            std::borrow::Cow::Owned(normalize_name(raw))
+        }
+    }
+
     /// Length (in tokens) of the longest known name starting at the current position.
     fn could_be_multi_token(&self, first: &str) -> bool {
         BUILTIN_MULTI_FIRST.contains(&first)
@@ -208,6 +222,16 @@ impl<'a> Parser<'a> {
     }
 
     fn known_match_len(&self) -> usize {
+        let (p, len, nl) = self.known_memo.get();
+        if p == self.pos && nl == self.locals.len() {
+            return len;
+        }
+        let len = self.known_match_len_uncached();
+        self.known_memo.set((self.pos, len, self.locals.len()));
+        len
+    }
+
+    fn known_match_len_uncached(&self) -> usize {
         let start = self.pos;
         let first = match self.toks[start].name() {
             Some(n) => n,
@@ -224,7 +248,8 @@ impl<'a> Parser<'a> {
                 Tok::Punct(p) if !matches!(*p, "." | "-" | "+" | "*" | "/") => break,
                 _ => {}
             }
-            if matches!(self.toks[start].tok, Tok::Name(_)) && self.is_known(&self.slice(start, j))
+            if matches!(self.toks[start].tok, Tok::Name(_))
+                && self.is_known(&self.slice_cow(start, j))
             {
                 best = j - start + 1;
             }
@@ -232,7 +257,7 @@ impl<'a> Parser<'a> {
         best
     }
 
-    fn parse_name(&mut self) -> PResult<String> {
+    fn parse_name(&mut self) -> PResult<std::borrow::Cow<'a, str>> {
         let start = self.pos;
         if self.peek().name().is_none() {
             return self.err("expected name");
@@ -246,7 +271,7 @@ impl<'a> Parser<'a> {
             end += 1;
         }
         self.pos = end + 1;
-        Ok(self.slice(start, end))
+        Ok(self.slice_cow(start, end))
     }
 
     /// Raw name made of all tokens up to one of the stop punctuations.
@@ -257,7 +282,7 @@ impl<'a> Parser<'a> {
             match &t.tok {
                 Tok::Eof => break,
                 Tok::Punct(p) if stops.contains(p) => break,
-                Tok::Name(n) if stop_words.contains(&n.as_str()) && self.pos > start => break,
+                Tok::Name(n) if stop_words.contains(n) && self.pos > start => break,
                 _ => self.pos += 1,
             }
         }
@@ -272,7 +297,7 @@ impl<'a> Parser<'a> {
         if let Tok::Name(n) = &t.tok
             && self.known_match_len() <= 1
         {
-            match n.as_str() {
+            match *n {
                 "if" => return self.parse_if(),
                 "for" => return self.parse_for(),
                 "some" => return self.parse_quantified(false),
@@ -549,7 +574,7 @@ impl<'a> Parser<'a> {
     fn can_start_expr(&self, t: &Token) -> bool {
         match &t.tok {
             Tok::Number(_) | Tok::Str(_) | Tok::At(_) => true,
-            Tok::Name(n) => !STOP_WORDS.contains(&n.as_str()),
+            Tok::Name(n) => !STOP_WORDS.contains(n),
             Tok::Punct(p) => matches!(
                 *p,
                 "(" | "[" | "{" | "-" | "<" | "<=" | ">" | ">=" | "=" | "!=" | "]"
@@ -564,7 +589,7 @@ impl<'a> Parser<'a> {
             if self.peek().is_punct(".") && self.peek_at(1).name().is_some() {
                 self.pos += 1;
                 let name = self.parse_name()?;
-                e = Expr::Path(Box::new(e), Rc::from(name.as_str()));
+                e = Expr::Path(Box::new(e), Rc::from(&*name));
             } else if self.peek().is_punct("[")
                 && self.can_start_expr(self.peek_at(1))
                 && !self.peek_at(1).is_punct("]")
@@ -718,7 +743,7 @@ impl<'a> Parser<'a> {
             }
             Tok::Name(n) => {
                 if self.known_match_len() <= 1 {
-                    match n.as_str() {
+                    match *n {
                         "if" => return self.parse_if(),
                         "for" => return self.parse_for(),
                         "some" => return self.parse_quantified(false),
@@ -742,7 +767,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let name = self.parse_name()?;
-                Ok(Expr::Name(Rc::from(name.as_str())))
+                Ok(Expr::Name(Rc::from(&*name)))
             }
             _ => self.err("unexpected token"),
         }
@@ -757,7 +782,7 @@ impl<'a> Parser<'a> {
         let saved = self.locals.len();
         loop {
             let key = if let Tok::Str(s) = &self.peek().tok {
-                let s = s.clone();
+                let s = s.to_string();
                 self.pos += 1;
                 s
             } else {

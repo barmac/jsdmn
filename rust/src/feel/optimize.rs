@@ -5,7 +5,6 @@
 //! model is compiled instead of on every evaluation.
 
 use super::ast::*;
-use super::builtins::is_builtin_name;
 use super::eval::{Scope, eval};
 use std::rc::Rc;
 
@@ -50,18 +49,13 @@ impl Folder<'_> {
                         UnaryTest::Expr { expr, .. } => is_const(expr),
                     })
             }
-            Call(f, args) => match &**f {
-                Name(n) => {
-                    is_builtin_name(n)
-                        && !is_impure(n)
-                        && !self.shadowed(n)
-                        && match args {
-                            Args::Positional(a) => a.iter().all(is_const),
-                            Args::Named(a) => a.iter().all(|(_, e)| is_const(e)),
-                        }
-                }
-                _ => false,
-            },
+            Builtin(b, args) => {
+                !is_impure(b.name())
+                    && match args {
+                        Args::Positional(a) => a.iter().all(is_const),
+                        Args::Named(a) => a.iter().all(|(_, e)| is_const(e)),
+                    }
+            }
             _ => false,
         }
     }
@@ -187,7 +181,15 @@ impl Folder<'_> {
                         Args::Named(a.into_iter().map(|(n, e)| (n, self.fold(e))).collect())
                     }
                 };
-                Call(f, args)
+                // resolve calls of (unshadowed) built-in functions at compile time
+                if let Name(n) = &*f
+                    && !self.shadowed(n)
+                    && let Some(b) = super::builtins::B::from_name(n)
+                {
+                    Builtin(b, args)
+                } else {
+                    Call(f, args)
+                }
             }
             Path(a, n) => Path(self.b(a), n),
             Filter(a, f) => {

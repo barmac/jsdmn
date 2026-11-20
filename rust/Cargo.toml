@@ -11,6 +11,7 @@ chrono = "0.4.45"
 chrono-tz = "0.10.4"
 fancy-regex = "0.20.2"
 memchr = "2.8.3"
+mimalloc = { version = "0.1.52", optional = true }
 num-bigint = "0.5.1"
 num-integer = "0.1.47"
 num-traits = "0.2.19"
@@ -26,3 +27,6 @@ panic = "abort"
 [profile.profiling]
 inherits = "release"
 debug = true
+
+[features]
+mimalloc = ["dep:mimalloc"]
