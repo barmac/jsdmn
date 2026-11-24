@@ -15,8 +15,8 @@ export class Evaluation {
 
   /**
    * @param {object} options
-   * @param {(inputData: import('./handlers/InputData.js').InputData) => any} options.getInput
-   *        returns the raw value provided for an input data element (or `undefined`)
+   * @param {(element: object) => any} options.getInput
+   *        returns the raw value provided for an input data element or a required decision (or `undefined`)
    * @param {Message[]} [options.messages] shared message log
    * @param {object} [options.variables] free variables visible to decisions, i.e. provided
    *        values that do not correspond to a modeled input data element

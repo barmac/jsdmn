@@ -13,6 +13,7 @@ ___Note:__ Yet to be released changes appear here._
 * `FEAT`: evaluate decision tables, invocations, lists, relations, conditionals, filters and iterators
 * `FEAT`: evaluate decision services and business knowledge models, directly or as functions
 * `FEAT`: support imports of DMN models
+* `FEAT`: use values provided for required decisions instead of evaluating them
 * `FEAT`: type check and coerce values according to item definitions
 * `FEAT`: support Java function definitions
 * `FEAT`: add FEEL interpreter implementing DMN 1.5 semantics

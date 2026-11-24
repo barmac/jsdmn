@@ -193,8 +193,8 @@ function getFreeVariables(model, inputs) {
 }
 
 /**
- * Look up the value provided for an input data (or decision service input)
- * element, from the perspective of the given model.
+ * Look up the value provided for an input data element, a decision service
+ * input or a required decision, from the perspective of the given model.
  */
 function lookupInput(model, element, inputs) {
 

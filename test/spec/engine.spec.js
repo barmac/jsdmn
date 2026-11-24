@@ -368,6 +368,26 @@ describe('evaluator', function() {
     });
 
 
+    it('should use value provided for required decision', async function() {
+
+      // then
+      expect(await engine.evaluateDecision('Welcome', { lib: { Salutation: 'Hi' } })).to.eql('HI!');
+      expect(await engine.evaluateDecision('Welcome', { '{http://jsdmn/lib}Salutation': 'Hi' })).to.eql('HI!');
+    });
+
+
+    it('should evaluate requested decision despite provided value', async function() {
+
+      // when
+      const result = await engine.evaluateDecision('Salutation', { Name: 'Bob', Salutation: 'Hi' }, {
+        namespace: 'http://jsdmn/lib'
+      });
+
+      // then
+      expect(result).to.eql('Hello Bob');
+    });
+
+
     it('should look up decision by namespace', async function() {
 
       // when

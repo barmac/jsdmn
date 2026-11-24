@@ -69,7 +69,7 @@ export class Requirements {
   populate(scope, evaluation) {
 
     for (const element of this.information) {
-      this.model.assign(scope, element, element.evaluate(evaluation));
+      this.model.assign(scope, element, element.evaluate(evaluation, { required: true }));
     }
 
     for (const element of this.knowledge) {

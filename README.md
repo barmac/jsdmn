@@ -25,7 +25,7 @@ console.log(result) // prints result
 
 ### Inputs
 
-Inputs are passed by the name of the respective input data element. Values not matching any input data element of the model are visible to decisions as plain variables.
+Inputs are passed by the name of the respective input data element. Values not matching any input data element of the model are visible to decisions as plain variables. A value given for a decision that another decision requires is used instead of evaluating it.
 
 Inputs of [imported models](#imports) can be nested under the name of the import or be given in qualified form, as `{namespace}name`:
 

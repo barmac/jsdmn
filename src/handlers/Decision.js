@@ -43,10 +43,21 @@ export class Decision {
   /**
    * Evaluate the decision (at most once per evaluation).
    *
+   * A value provided for a decision that is evaluated as a requirement of
+   * another element is used instead of evaluating the decision.
+   *
    * @param {import('../evaluation.js').Evaluation} evaluation
+   * @param {object} [options]
+   * @param {boolean} [options.required] whether the decision is evaluated as a requirement
    */
-  evaluate(evaluation) {
+  evaluate(evaluation, { required = false } = {}) {
     return evaluation.resolve(this, () => {
+
+      const provided = required ? evaluation.getInput(this) : undefined;
+
+      if (provided !== undefined) {
+        return this.model.coerce(provided, this.type, evaluation, this, 'input');
+      }
 
       const scope = this.requirements.populate({
         ...evaluation.variables,
