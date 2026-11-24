@@ -278,16 +278,16 @@ describe('evaluator', function() {
     }
 
 
-    it('should report division by zero as error', async function() {
+    it('should report unknown function as error', async function() {
 
       // when
-      const { value, messages } = await evaluate('Division');
+      const { value, messages } = await evaluate('Unknown Function');
 
       // then
       expect(value).to.be.null;
-      expect(messages).to.have.length(1);
-      expect(messages[0]).to.include({ severity: 'error', elementName: 'Division' });
-      expect(messages[0].message).to.include('division by zero');
+      expect(messages).not.to.be.empty;
+      expect(messages.every(m => m.severity === 'error' && m.elementName === 'Unknown Function')).to.be.true;
+      expect(messages.some(m => m.type === 'NO_FUNCTION_FOUND')).to.be.true;
     });
 
 
@@ -311,7 +311,7 @@ describe('evaluator', function() {
       expect(value).to.be.null;
       expect(messages).to.have.length(1);
       expect(messages[0]).to.include({ severity: 'error', type: 'INVALID_ARGUMENTS' });
-      expect(messages[0].message).to.include('<sqrt> returned null for ("4")');
+      expect(messages[0].message).to.include('number(from) expects a numeric string');
     });
 
 

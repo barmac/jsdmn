@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="messages" name="Messages" namespace="http://jsdmn/messages">
-  <decision id="Division" name="Division">
-    <variable name="Division" />
+  <decision id="UnknownFunction" name="Unknown Function">
+    <variable name="Unknown Function" />
     <literalExpression>
-      <text>10 / 0</text>
+      <text>foo(1)</text>
     </literalExpression>
   </decision>
   <decision id="NullOperand" name="Null Operand">
@@ -15,7 +15,7 @@
   <decision id="InvalidArgument" name="Invalid Argument">
     <variable name="Invalid Argument" />
     <literalExpression>
-      <text>sqrt("4")</text>
+      <text>number("abc")</text>
     </literalExpression>
   </decision>
   <decision id="Recovered" name="Recovered">

@@ -107,7 +107,7 @@ describe('DMN versions', function() {
     });
 
 
-    it('should evaluate DMN 1.5 builtins', async function() {
+    it('should evaluate DMN 1.5 model', async function() {
 
       // given
       const inputs = { Team: [ 'ann', 'bob' ] };

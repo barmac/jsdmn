@@ -5,11 +5,11 @@
 import { Parser } from 'saxen';
 
 import {
-  parseDate,
-  parseDateTime,
-  parseDuration,
-  parseTime
-} from '../../src/feel/temporal.js';
+  date as parseDate,
+  dateAndTime as parseDateTime,
+  duration as parseDuration,
+  time as parseTime
+} from 'feelin';
 
 const TC_NS = 'http://www.omg.org/spec/DMN/20160719/testcase';
 const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';

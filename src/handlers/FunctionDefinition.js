@@ -1,17 +1,16 @@
 import {
   DmnFunction,
-  getFeelType,
   invocationFailure
 } from '../feel.js';
-
-import { resolveJavaMethod } from '../java.js';
 
 import { FunctionType, getReturnType } from '../types.js';
 
 import { createOptionalExpression } from './Expression.js';
 
 /**
- * A boxed function definition (FEEL, Java or PMML kind).
+ * A boxed function definition. Only FEEL functions are supported; Java
+ * and PMML functions are external functions, which the engine does not
+ * execute.
  */
 export class FunctionDefinition {
 
@@ -56,10 +55,6 @@ export class FunctionDefinition {
     const returnType = this.getReturnType(owner);
 
     const type = new FunctionType(parameterTypes, returnType);
-
-    if (this.kind === 'Java') {
-      return this.createJavaFunction(scope, evaluation, owner, type);
-    }
 
     if (this.kind !== 'FEEL') {
       evaluation.error(`unsupported function kind <${ this.kind }>`, owner);
@@ -108,36 +103,5 @@ export class FunctionDefinition {
     }
 
     return model.resolveType(null);
-  }
-
-  createJavaFunction(scope, evaluation, owner, type) {
-
-    const mapping = this.body.evaluate(scope, evaluation);
-
-    const java = getFeelType(mapping?.java) === 'context' ? mapping.java : mapping;
-
-    const className = java?.['class'];
-    const methodSignature = java?.['method signature'];
-
-    const method = resolveJavaMethod(className, methodSignature);
-
-    if (!method) {
-      evaluation.error(`cannot resolve Java method <${ className }#${ methodSignature }>`, owner);
-    }
-
-    return new DmnFunction((args) => {
-
-      if (!method) {
-        return invocationFailure(`cannot resolve Java method <${ className }#${ methodSignature }>`);
-      }
-
-      try {
-        return method(...args);
-      } catch (error) {
-        evaluation.error(`Java method <${ className }#${ methodSignature }> failed: ${ error.message }`, owner);
-
-        return invocationFailure(error.message);
-      }
-    }, this.parameters.map(p => p.name), { type });
   }
 }

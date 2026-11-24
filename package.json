@@ -35,8 +35,7 @@
   "license": "MIT",
   "dependencies": {
     "dmn-moddle": "^12.2.1",
-    "feelin": "^8.2.0",
-    "temporal-polyfill": "^1.0.8"
+    "feelin": "^8.2.2"
   },
   "devDependencies": {
     "chai": "^6.3.0",

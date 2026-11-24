@@ -71,7 +71,7 @@ export class DecisionTable {
 
     for (const input of this.inputs) {
       const value = this.model.coerce(
-        evaluateExpression(input.expression, scope, evaluation, this, this.model),
+        evaluateExpression(input.expression, scope, evaluation, this),
         this.model.resolveType(input.typeRef),
         evaluation,
         input,
@@ -81,7 +81,7 @@ export class DecisionTable {
       if (
         input.allowedValues &&
         value !== null &&
-        evaluateUnaryTests(input.allowedValues, value, scope, evaluation, this, this.model) !== true
+        evaluateUnaryTests(input.allowedValues, value, scope, evaluation, this) !== true
       ) {
         evaluation.error(`input value <${ describe(value) }> of <${ input.name }> is not one of the allowed values <${ input.allowedValues }>`, this);
 
@@ -94,7 +94,7 @@ export class DecisionTable {
     // match rules
     const matches = this.rules.filter(rule => {
       return rule.inputEntries.every((entry, idx) => {
-        return evaluateUnaryTests(entry, inputValues[idx], scope, evaluation, this, this.model) === true;
+        return evaluateUnaryTests(entry, inputValues[idx], scope, evaluation, this) === true;
       });
     });
 
@@ -110,7 +110,7 @@ export class DecisionTable {
 
       for (const [ idx, output ] of this.outputs.entries()) {
         const value = this.model.coerce(
-          evaluateExpression(rule.outputEntries[idx], scope, evaluation, this, this.model),
+          evaluateExpression(rule.outputEntries[idx], scope, evaluation, this),
           this.model.resolveType(output.typeRef),
           evaluation,
           output,
@@ -120,7 +120,7 @@ export class DecisionTable {
         if (
           output.allowedValues &&
           value !== null &&
-          evaluateUnaryTests(output.allowedValues, value, scope, evaluation, this, this.model) !== true
+          evaluateUnaryTests(output.allowedValues, value, scope, evaluation, this) !== true
         ) {
           evaluation.error(`output value <${ describe(value) }> of <${ output.name || 'output' }> is not one of the allowed values <${ output.allowedValues }>`, this);
 
@@ -282,7 +282,7 @@ export class DecisionTable {
   getPriority(output, value, scope, evaluation) {
 
     const idx = output.priorities.findIndex(test => {
-      return evaluateUnaryTests(test, value, scope, evaluation, this, this.model) === true;
+      return evaluateUnaryTests(test, value, scope, evaluation, this) === true;
     });
 
     return idx === -1 ? output.priorities.length : idx;
@@ -305,7 +305,7 @@ export class DecisionTable {
 
     return this.toValue(this.outputs.map(output => {
       return output.defaultValue !== null
-        ? evaluateExpression(output.defaultValue, scope, evaluation, this, this.model)
+        ? evaluateExpression(output.defaultValue, scope, evaluation, this)
         : null;
     }));
   }

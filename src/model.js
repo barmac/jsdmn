@@ -343,10 +343,30 @@ export class Model {
   }
 
   /**
+   * FEEL scope entries that expose the item definitions of this model to
+   * `instance of`: feelin resolves an unknown type name from the scope and
+   * checks values against it with `instanceof`.
+   */
+  get typeScope() {
+
+    if (!this._typeScope) {
+      const scope = {};
+
+      for (const itemDefinition of this.itemDefinitions.values()) {
+        scope[itemDefinition.get('name')] = createTypeTest(this.getItemDefinitionType(itemDefinition));
+      }
+
+      this._typeScope = scope;
+    }
+
+    return this._typeScope;
+  }
+
+  /**
    * Create the root scope for evaluating expressions of this model.
    */
   createScope() {
-    return {};
+    return { ...this.typeScope };
   }
 
   /**
@@ -376,6 +396,22 @@ export class Model {
   }
 }
 
+
+/**
+ * Create a value usable as the right hand side of a FEEL `instance of`.
+ */
+function createTypeTest(type) {
+
+  const test = function() {
+    return null;
+  };
+
+  Object.defineProperty(test, Symbol.hasInstance, {
+    value: (value) => type.isInstance(value)
+  });
+
+  return test;
+}
 
 function isPlainObject(value) {
   return getFeelType(value) === 'context';

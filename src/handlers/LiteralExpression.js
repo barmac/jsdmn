@@ -32,6 +32,6 @@ export class LiteralExpression {
       return null;
     }
 
-    return evaluateExpression(this.text, scope, evaluation, this, this.model);
+    return evaluateExpression(this.text, scope, evaluation, this);
   }
 }

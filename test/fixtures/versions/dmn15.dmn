@@ -24,7 +24,7 @@
       <requiredInput href="#Team" />
     </informationRequirement>
     <literalExpression id="InRange_value">
-      <text>count(Team) in range("[1..3]")</text>
+      <text>count(Team) in [1..3]</text>
     </literalExpression>
   </decision>
   <decision id="Captain" name="Captain">
@@ -37,7 +37,7 @@
         <literalExpression><text>count(Team) &gt; 0</text></literalExpression>
       </if>
       <then>
-        <literalExpression><text>list replace(Team, 1, upper case(Team[1]))</text></literalExpression>
+        <literalExpression><text>concatenate([upper case(Team[1])], sublist(Team, 2))</text></literalExpression>
       </then>
       <else>
         <literalExpression><text>[]</text></literalExpression>

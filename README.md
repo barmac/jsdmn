@@ -4,11 +4,11 @@
 
 Evaluate DMN 1.3, 1.4 and 1.5 decisions both in NodeJS and in browser.
 
-`jsdmn` passes all __3407__ test cases of compliance level 2 and 3 of [the DMN TCK](https://github.com/dmn-tck/tck), see [DMN TCK](#dmn-tck).
+`jsdmn` passes __2831__ of the 3437 test cases of compliance level 2 and 3 of [the DMN TCK](https://github.com/dmn-tck/tck). The remaining test cases fail because of gaps in [feelin](https://github.com/nikku/feelin), the FEEL interpreter it uses, see [DMN TCK](#dmn-tck).
 
 ## Goal
 
-This project is built for learning, so don't expect production-readiness soon (or anytime, really). Nevertheless, it passes [the dmntck test suite](https://github.com/dmn-tck/tck).
+This project is built for learning, so don't expect production-readiness soon (or anytime, really). Nevertheless, it is tested against [the dmntck test suite](https://github.com/dmn-tck/tck).
 
 ## Usage
 
@@ -52,7 +52,7 @@ await engine.evaluateBusinessKnowledgeModel('Double', { x: 21 });
 
 ### Messages
 
-Errors (e.g. values not conforming to their type, division by zero, `null` operands, invalid builtin function arguments) evaluate to `null`, as specified by DMN. To understand why, evaluate with `engine.evaluate`, which returns the reported messages, too:
+Errors (e.g. values not conforming to their type, `null` operands, invalid builtin function arguments) evaluate to `null`, as specified by DMN. To understand why, evaluate with `engine.evaluate`, which returns the reported messages, too:
 
 ```javascript
 const { value, messages } = await engine.evaluate('decision', 'Decision', { name: null });
@@ -61,13 +61,15 @@ const { value, messages } = await engine.evaluate('decision', 'Decision', { name
 // messages: [ {
 //   severity: 'error',
 //   type: 'INVALID_TYPE',
-//   message: 'cannot apply <+> to <string> and <Null> (in <"Hello " + name>)',
+//   message: 'Can\'t add \'null\' to \'"Hello "\' (in <"Hello " + name>)',
 //   elementId: 'Decision_1',
 //   elementName: 'Decision'
 // } ]
 ```
 
 Problems that cause an expression to evaluate to `null` are reported as errors. Problems an expression recovers from, e.g. accessing a property of `null` in `if a.b = null then "none" else a.b`, are reported as warnings. Regular `null` results, such as `not(null)` (three-valued logic) or `get value(context, "missing key")`, are not reported.
+
+FEEL problems are reported as far as feelin reports them. Some, such as division by zero or invalid arguments to many builtin functions, yield `null` without a message (see [barmac/feelin#12](https://github.com/barmac/feelin/pull/12)).
 
 ### DMN versions
 
@@ -99,16 +101,15 @@ await engine.evaluateDecision('Decision', inputs, { namespace: 'https://example.
 * DMN 1.3, 1.4 and 1.5 models (DMN 1.1 and 1.2 are read as DMN 1.3), see [DMN versions](#dmn-versions)
 * Decisions, input data, business knowledge models, decision services (invoked directly or as functions), DRG scoping
 * Imports of DMN models (named and unnamed)
-* Boxed expressions: literal expressions, contexts, decision tables (all hit policies and aggregations, input / output values, default outputs), invocations, function definitions (FEEL and Java), lists, relations, conditionals, filters, iterators (`for`, `some`, `every`)
+* Boxed expressions: literal expressions, contexts, decision tables (all hit policies and aggregations, input / output values, default outputs), invocations, function definitions (FEEL), lists, relations, conditionals, filters, iterators (`for`, `some`, `every`)
 * Item definitions: structures, collections, allowed values, type constraints, function types; type checks and implicit conversions (to and from singleton lists, date to date and time)
-* Full FEEL, including temporal arithmetic, ranges, `instance of`, external Java functions and all builtin functions of DMN 1.5
+* FEEL expressions and unary tests, evaluated by [feelin](https://github.com/nikku/feelin), including `instance of` checks against item definitions; see [DMN TCK](#dmn-tck) for the parts of FEEL that feelin does not implement as specified yet
 
 ### Implementation notes
 
-* FEEL is evaluated by an interpreter that is part of this library. It uses [feelin](https://github.com/nikku/feelin) for parsing and its builtin functions, overriding those whose semantics deviate from the DMN 1.5 specification.
-* Numbers are IEEE 754 doubles, not decimal128. Equality and comparison tolerate binary rounding errors (`0.1 + 0.2 = 0.3` is `true`), rounding functions (`decimal`, `round half up`, ...) work on the exact decimal representation.
-* Temporal values use [`Temporal`](https://tc39.es/proposal-temporal/docs/) (via [temporal-polyfill](https://github.com/fullcalendar/temporal-polyfill)), extended to FEEL's year range of +/- 999,999,999.
-* Java functions are emulated for a curated set of `java.lang` methods (`Math`, `Integer`, `Double`, `String#format`, ...).
+* FEEL is evaluated by [feelin](https://github.com/nikku/feelin). The engine evaluates the DRG, boxed expressions and decision tables, and checks and coerces values according to item definitions; item definitions are passed to feelin so that `instance of` can test against them.
+* Numbers are IEEE 754 doubles, as in feelin, not decimal128 (`0.1 + 0.2 = 0.3` is `false`).
+* Function definitions of kind `Java` or `PMML` are external functions, which the engine does not execute: they evaluate to `null` and report an error.
 * Decision tables with multiple hit policies (`COLLECT`, `RULE ORDER`, `OUTPUT ORDER`) yield an empty list if no rule matches (`COLLECT` with `COUNT`: `0`).
 
 ## DMN TCK
@@ -123,15 +124,15 @@ npm run tck:fetch
 npm run tck
 ```
 
-The TCK evolves over time, so its latest revision (`master`) is used by default: an existing checkout is updated whenever the TCK moved on, and reused as-is if the TCK cannot be reached. Set `TCK_REF` to test against a specific branch, tag or commit; the `DMNv1.3` and `DMNv1.4` tags hold the TCK as published for DMN 1.3 (138 models) and DMN 1.4 (155 models). Earlier revisions encode earlier expectations: against both tags, 5 test cases fail that the TCK has since revised (equality of `(< 10)` and `(null..10)`, and per-import bindings of the same input data, superseded by [DMN16-50](https://issues.omg.org/browse/DMN16-50)). CI caches the TCK by the commit it resolves to and additionally runs weekly to catch up with TCK changes; each run records the TCK revision it used in `tmp/tck-results/summary.json`.
+The TCK evolves over time, so its latest revision (`master`) is used by default: an existing checkout is updated whenever the TCK moved on, and reused as-is if the TCK cannot be reached. Set `TCK_REF` to test against a specific branch, tag or commit; the `DMNv1.3` and `DMNv1.4` tags hold the TCK as published for DMN 1.3 (138 models) and DMN 1.4 (155 models). Known failures are recorded for the latest revision; earlier revisions encode earlier expectations. CI caches the TCK by the commit it resolves to and additionally runs weekly to catch up with TCK changes; each run records the TCK revision it used in `tmp/tck-results/summary.json`.
 
-The TCK models are DMN 1.5 models. Besides running them as authored, the runner re-expresses them as DMN 1.4 and DMN 1.3 models (rewriting model, DMNDI and FEEL namespaces) and runs them again. Results as of TCK revision [`5cd912f`](https://github.com/dmn-tck/tck/commit/5cd912f281831bc535e710aba435e16de198028a) (2026-11-04):
+The TCK models are DMN 1.5 models. Besides running them as authored, the runner re-expresses them as DMN 1.4 and DMN 1.3 models (rewriting model, DMNDI and FEEL namespaces) and runs them again. Results as of TCK revision [`22f109c`](https://github.com/dmn-tck/tck/commit/22f109c37cb55d5ac9bc84feaa1bb51b156f76ba) (2026-11-23):
 
 | Version | Passed | Skipped |
 | ------- | ------ | ------- |
-| DMN 1.5 | 3407 / 3407 | - |
-| DMN 1.4 | 3407 / 3407 | - |
-| DMN 1.3 | 3388 / 3407 | 19, using boxed `conditional`, `filter`, `for`, `some` and `every` (introduced with DMN 1.4) |
+| DMN 1.5 | 2831 / 3437 | 606 known failures |
+| DMN 1.4 | 2831 / 3437 | 606 known failures |
+| DMN 1.3 | 2812 / 3437 | 606 known failures, 19 using boxed `conditional`, `filter`, `for`, `some` and `every` (introduced with DMN 1.4) |
 
 For skipped folders, the runner asserts that their models are rejected when read as the respective version.
 
@@ -147,7 +148,32 @@ The test run can be customized via environment variables:
 
 Results expected to be errors (`errorResult="true"`) must evaluate to `null` and be reported as an error; results expected to be non-`null` must not report errors.
 
-Numbers are compared with a relative tolerance of `1e-12`; expected values given with 7 or more fraction digits (e.g. results of `exp(4)`) are compared at that precision. Known failures can be registered in [`test/tck/known-failures.js`](./test/tck/known-failures.js); there are none.
+Numbers are compared with a relative tolerance of `1e-12`; expected values given with 7 or more fraction digits (e.g. results of `exp(4)`) are compared at that precision.
+
+### Known failures
+
+Test cases that fail because of gaps in feelin are listed in [`test/tck/known-failures.js`](./test/tck/known-failures.js), grouped by gap, and reported as skipped. A known failure that passes is noted in the results, a failure that is not listed fails the run. Each gap links the feelin pull request that closes it; this was checked by running the TCK against each of them.
+
+| Gap in feelin | Test cases | Fixed by |
+| ------------- | ---------- | -------- |
+| `null` results of errors are not reported, e.g. division by zero, invalid builtin arguments | 239 | [barmac/feelin#12](https://github.com/barmac/feelin/pull/12) |
+| temporal and duration arithmetic | 165 | [barmac/feelin#13](https://github.com/barmac/feelin/pull/13) |
+| temporal value range (years beyond +/- 271,821) and parsing | 86 | [barmac/feelin#17](https://github.com/barmac/feelin/pull/17) |
+| `range(from)` function | 19 | [barmac/feelin#9](https://github.com/barmac/feelin/pull/9) |
+| XML Schema regular expressions | 14 | [barmac/feelin#11](https://github.com/barmac/feelin/pull/11) |
+| range equality, `null` bounds and iteration | 12 | [barmac/feelin#14](https://github.com/barmac/feelin/pull/14) |
+| rounding scales | 9 | [barmac/feelin#7](https://github.com/barmac/feelin/pull/7) |
+| range functions (`before`, `during`, ...) | 8 | [barmac/feelin#10](https://github.com/barmac/feelin/pull/10) |
+| `list replace` | 7 | [barmac/feelin#4](https://github.com/barmac/feelin/pull/4) |
+| filters on non-list values | 3 | [barmac/feelin#3](https://github.com/barmac/feelin/pull/3) |
+| boolean unary tests | 2 | [barmac/feelin#6](https://github.com/barmac/feelin/pull/6) |
+| context literals with duplicate keys | 1 | [barmac/feelin#8](https://github.com/barmac/feelin/pull/8) |
+| `is` with durations of different kinds | 1 | [barmac/feelin#2](https://github.com/barmac/feelin/pull/2) |
+| parameter types of function definitions | 1 | [nikku/feelin#184](https://github.com/nikku/feelin/pull/184) |
+| arithmetic or range semantics, whose fix then yields `null` without reporting an error | 7 | [barmac/feelin#13](https://github.com/barmac/feelin/pull/13) or [#14](https://github.com/barmac/feelin/pull/14), errors: [#12](https://github.com/barmac/feelin/pull/12) |
+| `range<T>` types in `instance of` (8), errors for missing duration properties (6) and `floor` / `ceiling` with a `null` scale (4) | 18 | - |
+
+Besides these, the 14 test cases of `0076-feel-external-java` fail, because the engine does not execute external (Java) functions.
 
 ## Build and Run
 
@@ -167,7 +193,6 @@ This library is built upon these amazing projects:
 
 * [feelin](https://github.com/nikku/feelin) - JavaScript FEEL parser and interpreter
 * [dmn-moddle](https://github.com/bpmn-io/dmn-moddle) - DMN parser
-* [temporal-polyfill](https://github.com/fullcalendar/temporal-polyfill) - `Temporal` implementation
 
 ## License
 

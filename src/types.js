@@ -12,7 +12,7 @@ import {
   FeelRange
 } from './feel.js';
 
-import { dateToDateTime } from './feel/temporal.js';
+import { dateAndTime } from 'feelin';
 
 
 /**
@@ -650,5 +650,5 @@ export function coerce(value, type) {
 }
 
 function toDateTime(date) {
-  return dateToDateTime(date);
+  return dateAndTime(`${ date }T00:00:00Z`);
 }
