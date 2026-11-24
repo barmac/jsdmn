@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="main" name="Main" namespace="http://jsdmn/main">
+
+  <import name="lib" namespace="http://jsdmn/lib" importType="https://www.omg.org/spec/DMN/20230324/MODEL/" />
+
+  <decision id="Welcome" name="Welcome">
+    <variable name="Welcome" typeRef="string" />
+    <informationRequirement>
+      <requiredDecision href="http://jsdmn/lib#Salutation" />
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="http://jsdmn/lib#Shout" />
+    </knowledgeRequirement>
+    <literalExpression>
+      <text>lib.Shout(lib.Salutation)</text>
+    </literalExpression>
+  </decision>
+</definitions>

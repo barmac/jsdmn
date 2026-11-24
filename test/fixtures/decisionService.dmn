@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="decisionService" name="Decision Service" namespace="http://jsdmn/decisionService">
+
+  <inputData id="Amount" name="Amount">
+    <variable name="Amount" typeRef="number" />
+  </inputData>
+
+  <inputData id="Rate" name="Rate">
+    <variable name="Rate" typeRef="number" />
+  </inputData>
+
+  <decision id="Interest" name="Interest">
+    <variable name="Interest" typeRef="number" />
+    <informationRequirement>
+      <requiredInput href="#Amount" />
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#Rate" />
+    </informationRequirement>
+    <literalExpression>
+      <text>Amount * Rate</text>
+    </literalExpression>
+  </decision>
+
+  <decision id="Total" name="Total">
+    <variable name="Total" typeRef="number" />
+    <informationRequirement>
+      <requiredInput href="#Amount" />
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#Interest" />
+    </informationRequirement>
+    <literalExpression>
+      <text>Amount + Interest</text>
+    </literalExpression>
+  </decision>
+
+  <decisionService id="Calculate" name="Calculate">
+    <variable name="Calculate" />
+    <outputDecision href="#Total" />
+    <encapsulatedDecision href="#Interest" />
+    <inputData href="#Amount" />
+    <inputData href="#Rate" />
+  </decisionService>
+
+  <decisionService id="Breakdown" name="Breakdown">
+    <variable name="Breakdown" />
+    <outputDecision href="#Interest" />
+    <outputDecision href="#Total" />
+    <inputData href="#Amount" />
+    <inputData href="#Rate" />
+  </decisionService>
+
+  <businessKnowledgeModel id="Double" name="Double">
+    <variable name="Double" />
+    <encapsulatedLogic>
+      <formalParameter name="x" typeRef="number" />
+      <literalExpression>
+        <text>x * 2</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="Quote" name="Quote">
+    <variable name="Quote" />
+    <knowledgeRequirement>
+      <requiredKnowledge href="#Calculate" />
+    </knowledgeRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#Double" />
+    </knowledgeRequirement>
+    <invocation>
+      <literalExpression>
+        <text>Double</text>
+      </literalExpression>
+      <binding>
+        <parameter name="x" />
+        <literalExpression>
+          <text>Calculate(100, 0.1)</text>
+        </literalExpression>
+      </binding>
+    </invocation>
+  </decision>
+</definitions>

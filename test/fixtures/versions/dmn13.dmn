@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/" id="dmn13" name="DMN 1.3" namespace="http://jsdmn/versions/dmn13" exporter="dmn-js (https://demo.bpmn.io/dmn)" exporterVersion="17.0.2">
+  <inputData id="Age" name="Age">
+    <variable id="Age_variable" name="Age" typeRef="number" />
+  </inputData>
+  <decision id="Category" name="Category">
+    <variable id="Category_variable" name="Category" typeRef="string" />
+    <informationRequirement id="Category_requirement">
+      <requiredInput href="#Age" />
+    </informationRequirement>
+    <decisionTable id="Category_table" hitPolicy="FIRST">
+      <input id="Category_input" label="Age">
+        <inputExpression id="Category_inputExpression" typeRef="number">
+          <text>Age</text>
+        </inputExpression>
+      </input>
+      <output id="Category_output" name="Category" typeRef="string" />
+      <rule id="Category_rule_1">
+        <inputEntry id="Category_rule_1_in"><text>&lt; 18</text></inputEntry>
+        <outputEntry id="Category_rule_1_out"><text>"minor"</text></outputEntry>
+      </rule>
+      <rule id="Category_rule_2">
+        <inputEntry id="Category_rule_2_in"><text>[18..65)</text></inputEntry>
+        <outputEntry id="Category_rule_2_out"><text>"adult"</text></outputEntry>
+      </rule>
+      <rule id="Category_rule_3">
+        <inputEntry id="Category_rule_3_in"><text>-</text></inputEntry>
+        <outputEntry id="Category_rule_3_out"><text>"senior"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <businessKnowledgeModel id="Discount" name="Discount">
+    <variable id="Discount_variable" name="Discount" />
+    <encapsulatedLogic id="Discount_logic">
+      <formalParameter name="category" typeRef="string" />
+      <context id="Discount_context">
+        <contextEntry id="Discount_rates">
+          <variable id="Discount_rates_variable" name="rates" />
+          <literalExpression id="Discount_rates_value">
+            <text>{ minor: 0.5, adult: 0, senior: 0.3 }</text>
+          </literalExpression>
+        </contextEntry>
+        <contextEntry id="Discount_result">
+          <literalExpression id="Discount_result_value">
+            <text>get value(rates, category)</text>
+          </literalExpression>
+        </contextEntry>
+      </context>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+  <decision id="Price" name="Price">
+    <variable id="Price_variable" name="Price" typeRef="number" />
+    <informationRequirement id="Price_requirement">
+      <requiredDecision href="#Category" />
+    </informationRequirement>
+    <knowledgeRequirement id="Price_knowledgeRequirement">
+      <requiredKnowledge href="#Discount" />
+    </knowledgeRequirement>
+    <context id="Price_context">
+      <contextEntry id="Price_discount">
+        <variable id="Price_discount_variable" name="discount" />
+        <invocation id="Price_invocation">
+          <literalExpression id="Price_invocation_function">
+            <text>Discount</text>
+          </literalExpression>
+          <binding>
+            <parameter id="Price_invocation_parameter" name="category" />
+            <literalExpression id="Price_invocation_binding">
+              <text>Category</text>
+            </literalExpression>
+          </binding>
+        </invocation>
+      </contextEntry>
+      <contextEntry id="Price_result">
+        <literalExpression id="Price_result_value">
+          <text>100 * (1 - discount)</text>
+        </literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+  <decision id="ValidUntil" name="Valid Until">
+    <variable id="ValidUntil_variable" name="Valid Until" typeRef="date" />
+    <literalExpression id="ValidUntil_value">
+      <text>@"2020-01-31" + duration("P1M")</text>
+    </literalExpression>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_1">
+      <dmndi:DMNShape id="Category_shape" dmnElementRef="Category">
+        <dc:Bounds height="80" width="180" x="160" y="200" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="Age_shape" dmnElementRef="Age">
+        <dc:Bounds height="45" width="125" x="187" y="400" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="Category_requirement_edge" dmnElementRef="Category_requirement">
+        <di:waypoint x="250" y="400" />
+        <di:waypoint x="250" y="280" />
+      </dmndi:DMNEdge>
+      <dmndi:DMNShape id="Price_shape" dmnElementRef="Price">
+        <dc:Bounds height="80" width="180" x="160" y="50" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="Discount_shape" dmnElementRef="Discount">
+        <dc:Bounds height="46" width="135" x="400" y="67" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

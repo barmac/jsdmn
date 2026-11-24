@@ -1,8 +1,19 @@
 name: CI
-on: [ push, pull_request ]
+on:
+  push:
+  pull_request:
+  schedule:
+
+    # the DMN TCK evolves; regularly test against its latest revision
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
 jobs:
   Build:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [ 22, 24, 26 ]
 
     steps:
     - name: Checkout
@@ -10,9 +21,29 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 20
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - name: Install dependencies
       run: npm ci
+    - name: Resolve DMN TCK revision
+      id: tck
+      run: echo "revision=$(node tasks/fetch-tck.js --resolve)" >> "$GITHUB_OUTPUT"
+    - name: Cache DMN TCK
+      uses: actions/cache@v4
+      with:
+        path: tmp/dmn-tck
+        key: dmn-tck-${{ steps.tck.outputs.revision }}
+
+        # an outdated checkout is updated in place
+        restore-keys: dmn-tck-
     - name: Build
       run: npm run all
+      env:
+        TCK_REF: ${{ steps.tck.outputs.revision }}
+    - name: Upload DMN TCK results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: tck-results-node-${{ matrix.node-version }}
+        path: tmp/tck-results
+        if-no-files-found: ignore

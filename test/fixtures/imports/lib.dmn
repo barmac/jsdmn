@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="lib" name="Lib" namespace="http://jsdmn/lib">
+
+  <inputData id="Name" name="Name">
+    <variable name="Name" typeRef="string" />
+  </inputData>
+
+  <decision id="Salutation" name="Salutation">
+    <variable name="Salutation" typeRef="string" />
+    <informationRequirement>
+      <requiredInput href="#Name" />
+    </informationRequirement>
+    <literalExpression>
+      <text>"Hello " + Name</text>
+    </literalExpression>
+  </decision>
+
+  <businessKnowledgeModel id="Shout" name="Shout">
+    <variable name="Shout" />
+    <encapsulatedLogic>
+      <formalParameter name="text" typeRef="string" />
+      <literalExpression>
+        <text>upper case(text) + "!"</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+</definitions>

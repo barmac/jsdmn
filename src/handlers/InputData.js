@@ -1,7 +1,17 @@
+/**
+ * A DMN `<inputData>`.
+ */
 export class InputData {
-  constructor(moddleElement) {
-    this.name = moddleElement.get('name');
-    this.type = moddleElement.get('typeRef');
+
+  /**
+   * @param {object} element moddle `dmn:InputData`
+   * @param {import('../model.js').Model} model
+   */
+  constructor(element, model) {
+    this.id = element.get('id');
+    this.name = element.get('name');
+    this.model = model;
+    this.typeRef = element.get('variable')?.get('typeRef');
   }
 
   /**
@@ -11,5 +21,22 @@ export class InputData {
    */
   getName() {
     return this.name;
+  }
+
+  get type() {
+    return this.model.resolveType(this.typeRef);
+  }
+
+  /**
+   * Resolve the (type checked) value of this input.
+   *
+   * @param {import('../evaluation.js').Evaluation} evaluation
+   */
+  evaluate(evaluation) {
+    return evaluation.resolve(this, () => {
+      const value = evaluation.getInput(this);
+
+      return this.model.coerce(value, this.type, evaluation, this, 'input');
+    });
   }
 }

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dmn:definitions xmlns:dmn="https://www.omg.org/spec/DMN/20211108/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" xmlns:feel="https://www.omg.org/spec/DMN/20211108/FEEL/" id="dmn14" name="DMN 1.4" namespace="http://jsdmn/versions/dmn14" expressionLanguage="https://www.omg.org/spec/DMN/20211108/FEEL/">
+  <dmn:itemDefinition id="tScores" name="tScores" isCollection="true">
+    <dmn:typeRef>number</dmn:typeRef>
+  </dmn:itemDefinition>
+  <dmn:inputData id="Scores" name="Scores">
+    <dmn:variable id="Scores_variable" name="Scores" typeRef="tScores" />
+  </dmn:inputData>
+  <dmn:decision id="Passed" name="Passed">
+    <dmn:variable id="Passed_variable" name="Passed" typeRef="tScores" />
+    <dmn:informationRequirement id="Passed_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:filter id="Passed_filter">
+      <dmn:in>
+        <dmn:literalExpression><dmn:text>Scores</dmn:text></dmn:literalExpression>
+      </dmn:in>
+      <dmn:match>
+        <dmn:literalExpression><dmn:text>item &gt;= 50</dmn:text></dmn:literalExpression>
+      </dmn:match>
+    </dmn:filter>
+  </dmn:decision>
+  <dmn:decision id="Doubled" name="Doubled">
+    <dmn:variable id="Doubled_variable" name="Doubled" typeRef="tScores" />
+    <dmn:informationRequirement id="Doubled_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:for id="Doubled_for" iteratorVariable="score">
+      <dmn:in typeRef="tScores">
+        <dmn:literalExpression><dmn:text>Scores</dmn:text></dmn:literalExpression>
+      </dmn:in>
+      <dmn:return>
+        <dmn:literalExpression><dmn:text>score * 2</dmn:text></dmn:literalExpression>
+      </dmn:return>
+    </dmn:for>
+  </dmn:decision>
+  <dmn:decision id="AllPassed" name="All Passed">
+    <dmn:variable id="AllPassed_variable" name="All Passed" typeRef="boolean" />
+    <dmn:informationRequirement id="AllPassed_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:every id="AllPassed_every" iteratorVariable="score">
+      <dmn:in>
+        <dmn:literalExpression><dmn:text>Scores</dmn:text></dmn:literalExpression>
+      </dmn:in>
+      <dmn:satisfies>
+        <dmn:literalExpression><dmn:text>score &gt;= 50</dmn:text></dmn:literalExpression>
+      </dmn:satisfies>
+    </dmn:every>
+  </dmn:decision>
+  <dmn:decision id="AnyPerfect" name="Any Perfect">
+    <dmn:variable id="AnyPerfect_variable" name="Any Perfect" typeRef="boolean" />
+    <dmn:informationRequirement id="AnyPerfect_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:some id="AnyPerfect_some" iteratorVariable="score">
+      <dmn:in>
+        <dmn:literalExpression><dmn:text>Scores</dmn:text></dmn:literalExpression>
+      </dmn:in>
+      <dmn:satisfies>
+        <dmn:literalExpression><dmn:text>score = 100</dmn:text></dmn:literalExpression>
+      </dmn:satisfies>
+    </dmn:some>
+  </dmn:decision>
+  <dmn:decision id="Grade" name="Grade">
+    <dmn:variable id="Grade_variable" name="Grade" typeRef="string" />
+    <dmn:informationRequirement id="Grade_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:conditional id="Grade_conditional">
+      <dmn:if>
+        <dmn:literalExpression><dmn:text>mean(Scores) &gt;= 50</dmn:text></dmn:literalExpression>
+      </dmn:if>
+      <dmn:then>
+        <dmn:literalExpression><dmn:text>"pass"</dmn:text></dmn:literalExpression>
+      </dmn:then>
+      <dmn:else>
+        <dmn:literalExpression><dmn:text>"fail"</dmn:text></dmn:literalExpression>
+      </dmn:else>
+    </dmn:conditional>
+  </dmn:decision>
+  <dmn:decision id="Summary" name="Summary">
+    <dmn:variable id="Summary_variable" name="Summary" />
+    <dmn:informationRequirement id="Summary_requirement">
+      <dmn:requiredInput href="#Scores" />
+    </dmn:informationRequirement>
+    <dmn:literalExpression id="Summary_value" typeRef="context">
+      <dmn:text>{
+        joined: string join(for score in Scores return string(score), ", "),
+        average: round half up(mean(Scores), 1)
+      }</dmn:text>
+    </dmn:literalExpression>
+  </dmn:decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_1" name="DMN 1.4">
+      <dmndi:DMNShape id="Scores_shape" dmnElementRef="Scores">
+        <dc:Bounds height="45" width="125" x="187" y="400" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="Grade_shape" dmnElementRef="Grade">
+        <dc:Bounds height="80" width="180" x="160" y="200" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</dmn:definitions>

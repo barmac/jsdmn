@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd" xmlns:biodi="http://bpmn.io/schema/dmn/biodi/1.0" xmlns:camunda="http://camunda.org/schema/1.0/dmn" id="dish" name="Dish" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="Decision_1" name="Dish">
+    <extensionElements>
+      <biodi:bounds x="150" y="80" width="180" height="80" />
+    </extensionElements>
+    <decisionTable id="decisionTable_1" hitPolicy="FIRST">
+      <input id="input_1" label="Season" camunda:inputVariable="season">
+        <inputExpression id="inputExpression_1" typeRef="string" expressionLanguage="feel">
+          <text>season</text>
+        </inputExpression>
+      </input>
+      <output id="output_1" label="Dish" name="dish" typeRef="string" />
+      <rule id="Rule_1">
+        <inputEntry id="UnaryTests_1"><text>"Winter"</text></inputEntry>
+        <outputEntry id="LiteralExpression_1"><text>"Roastbeef"</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <inputEntry id="UnaryTests_2"><text></text></inputEntry>
+        <outputEntry id="LiteralExpression_2"><text>"Salad"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>
